@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PokePricesToExcel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-bg"></div>
+    <main class="app-shell">
+      <header class="app-header">
+        <h1>PokePricesToExcel</h1>
+        <p>Free Pokemon TCG market data from TCGdex with one-click Excel export.</p>
+      </header>
+
+      <section class="controls">
+        <label>
+          <span>Card Name Contains</span>
+          <input id="cardName" type="text" placeholder="charizard" />
+        </label>
+
+        <label>
+          <span>Set Name Contains</span>
+          <input id="setName" type="text" placeholder="base1" />
+        </label>
+
+        <label>
+          <span>Max Cards</span>
+          <input id="maxCards" type="number" min="1" max="200" value="30" />
+        </label>
+
+        <div class="actions">
+          <button id="fetchBtn" type="button">Fetch Market Data</button>
+          <button id="exportBtn" type="button">Export to Excel</button>
+        </div>
+      </section>
+
+      <section class="status-row">
+        <p id="statusText">Enter card name and/or set name, then click Fetch Market Data.</p>
+        <div id="loadingWrap" class="loading-wrap" aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <span id="loadingText">Loading...</span>
+        </div>
+      </section>
+
+      <section class="table-wrap">
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>card_id</th>
+              <th>name</th>
+              <th>set_name</th>
+              <th>source</th>
+              <th>variant</th>
+              <th>market_price</th>
+              <th>low_price</th>
+              <th>mid_price</th>
+              <th>high_price</th>
+              <th>avg_price</th>
+              <th>trend_price</th>
+              <th>currency</th>
+              <th>updated</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
