@@ -1087,6 +1087,14 @@ function getNextTabName() {
   return `Tab ${state.tabs.length + 1}`;
 }
 
+function createId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+
+  return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function getFirstUnusedColorIndex() {
   return TAB_COLORS.findIndex((_, index) => !state.tabs.some((tab) => tab.colorIndex === index));
 }
