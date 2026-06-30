@@ -63,7 +63,10 @@ const DEFAULT_ALLOWED_SOURCE_IDS = SOURCE_OPTIONS.map((source) => source.id);
 const DEFAULT_KEEP_SELECTED_ON_SEARCH = true;
 const DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH = false;
 const DEFAULT_SORT_SETTINGS_BY_SELECTED = false;
+const DEFAULT_MAX_CARDS = 100;
+const DEFAULT_ENABLE_ADVANCED_COLUMNS = true;
 const DEFAULT_SEARCH_GRID_STATE = { ...DEFAULT_TAB_GRID_STATE };
+const DEFAULT_RESTRICT_ADVANCED_COLUMNS = false;
 
 function normalizeColumnOrderIds(columnOrderIds) {
   const inputIds = Array.isArray(columnOrderIds)
@@ -271,6 +274,9 @@ function loadPersistedState() {
         keepSelectedOnSearch: DEFAULT_KEEP_SELECTED_ON_SEARCH,
         clearSearchInputsOnSearch: DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH,
         sortSettingsBySelected: DEFAULT_SORT_SETTINGS_BY_SELECTED,
+        maxCards: DEFAULT_MAX_CARDS,
+        enableAdvancedColumns: DEFAULT_ENABLE_ADVANCED_COLUMNS,
+        restrictAdvancedColumns: DEFAULT_RESTRICT_ADVANCED_COLUMNS,
         themePreference: "system",
         searchGridState: { ...DEFAULT_SEARCH_GRID_STATE },
         tabGridStates: {},
@@ -331,6 +337,11 @@ function loadPersistedState() {
       ? parsed.settings.sortSettingsBySelected
       : DEFAULT_SORT_SETTINGS_BY_SELECTED;
 
+    const parsedMaxCards = Number.parseInt(parsed?.settings?.maxCards, 10);
+    const maxCards = Number.isFinite(parsedMaxCards) && parsedMaxCards >= 1 && parsedMaxCards <= 200
+      ? parsedMaxCards
+      : DEFAULT_MAX_CARDS;
+
     const searchGridState = normalizeTabGridState(parsed?.settings?.searchGridState);
 
     const columnOrderIds = normalizeColumnOrderIds(parsed?.settings?.columnOrderIds);
@@ -357,6 +368,9 @@ function loadPersistedState() {
       keepSelectedOnSearch,
       clearSearchInputsOnSearch,
       sortSettingsBySelected,
+      maxCards,
+      enableAdvancedColumns: typeof parsed?.settings?.enableAdvancedColumns === "boolean" ? parsed.settings.enableAdvancedColumns : DEFAULT_ENABLE_ADVANCED_COLUMNS,
+        restrictAdvancedColumns: typeof parsed?.settings?.restrictAdvancedColumns === "boolean" ? parsed.settings.restrictAdvancedColumns : DEFAULT_RESTRICT_ADVANCED_COLUMNS,
       themePreference,
       searchGridState,
       tabGridStates,
@@ -378,6 +392,9 @@ function loadPersistedState() {
       keepSelectedOnSearch: DEFAULT_KEEP_SELECTED_ON_SEARCH,
       clearSearchInputsOnSearch: DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH,
       sortSettingsBySelected: DEFAULT_SORT_SETTINGS_BY_SELECTED,
+      maxCards: DEFAULT_MAX_CARDS,
+      enableAdvancedColumns: DEFAULT_ENABLE_ADVANCED_COLUMNS,
+        restrictAdvancedColumns: DEFAULT_RESTRICT_ADVANCED_COLUMNS,
       themePreference: "system",
       searchGridState: { ...DEFAULT_SEARCH_GRID_STATE },
       tabGridStates: {},
@@ -402,6 +419,9 @@ const state = {
   keepSelectedOnSearch: persistedState.keepSelectedOnSearch,
   clearSearchInputsOnSearch: persistedState.clearSearchInputsOnSearch,
   sortSettingsBySelected: persistedState.sortSettingsBySelected,
+  maxCards: persistedState.maxCards,
+  enableAdvancedColumns: persistedState.enableAdvancedColumns,
+    restrictAdvancedColumns: persistedState.restrictAdvancedColumns,
   themePreference: persistedState.themePreference,
   searchGridState: persistedState.searchGridState,
   tabGridStates: persistedState.tabGridStates,
@@ -428,7 +448,7 @@ const el = {
   setName: document.getElementById("setName"),
   cardNumber: document.getElementById("cardNumber"),
   setCode: document.getElementById("setCode"),
-  maxCards: document.getElementById("maxCards"),
+  maxCardsSetting: document.getElementById("maxCardsSetting"),
   fetchBtn: document.getElementById("fetchBtn"),
   exportSelectedSearchBtn: document.getElementById("exportSelectedSearchBtn"),
   moveSelectedBtn: document.getElementById("moveSelectedBtn"),
@@ -540,6 +560,14 @@ const el = {
   settingsExportColumnList: document.getElementById("settingsExportColumnList"),
   settingsSourceList: document.getElementById("settingsSourceList"),
   settingsBehaviorList: document.getElementById("settingsBehaviorList"),
+  enableAdvancedColumnsSetting: document.getElementById("enableAdvancedColumnsSetting"),
+    restrictAdvancedColumnsSetting: document.getElementById("restrictAdvancedColumnsSetting"),
+    searchAdvancedToggleBtn: document.getElementById("searchAdvancedToggleBtn"),
+    tabAdvancedToggleBtn: document.getElementById("tabAdvancedToggleBtn"),
+    searchFilterRow: document.getElementById("searchFilterRow"),
+    searchColumnChooser: document.getElementById("searchColumnChooser"),
+    tabFilterRow: document.getElementById("tabFilterRow"),
+    tabColumnChooser: document.getElementById("tabColumnChooser"),
   functionalSelectAllBtn: document.getElementById("functionalSelectAllBtn"),
   functionalResetBtn: document.getElementById("functionalResetBtn"),
   displaySelectAllBtn: document.getElementById("displaySelectAllBtn"),
@@ -663,6 +691,11 @@ el.sourceSelectAllBtn.addEventListener("click", selectAllSources);
 el.sourceResetBtn.addEventListener("click", resetSources);
 el.behaviorSelectAllBtn.addEventListener("click", selectAllBehaviorSettings);
 el.behaviorResetBtn.addEventListener("click", resetBehaviorSettings);
+el.maxCardsSetting.addEventListener("change", onMaxCardsSettingChange);
+el.enableAdvancedColumnsSetting.addEventListener("change", onEnableAdvancedColumnsChange);
+el.restrictAdvancedColumnsSetting.addEventListener("change", onRestrictAdvancedColumnsChange);
+el.searchAdvancedToggleBtn.addEventListener("click", onSearchAdvancedToggleClick);
+el.tabAdvancedToggleBtn.addEventListener("click", onTabAdvancedToggleClick);
 el.resetDefaultSettingsBtn.addEventListener("click", resetDefaultSettings);
 el.clearLocalDataBtn.addEventListener("click", openClearDataModal);
 el.clearDataModalCloseBtn.addEventListener("click", closeClearDataModal);
@@ -682,7 +715,7 @@ el.resetSettingsModal.addEventListener("click", (event) => {
   }
 });
 
-[el.cardName, el.setName, el.cardNumber, el.setCode, el.maxCards].forEach((input) => {
+[el.cardName, el.setName, el.cardNumber, el.setCode].forEach((input) => {
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -776,6 +809,38 @@ function getSelectionSet(scope) {
 
 function getActiveTab() {
   return state.tabs.find((tab) => tab.id === state.activeTabId) ?? null;
+}
+
+function isAdvancedColumnsVisible() {
+  return state.enableAdvancedColumns && !state.restrictAdvancedColumns;
+}
+
+function syncAdvancedViewControls() {
+  const advancedVisible = isAdvancedColumnsVisible();
+  const selectedActionDisplay = advancedVisible ? "" : "none";
+
+  [el.searchAdvancedToggleBtn, el.tabAdvancedToggleBtn].forEach((button) => {
+    if (!button) {
+      return;
+    }
+
+    button.classList.toggle("active", advancedVisible);
+    button.setAttribute("aria-pressed", String(advancedVisible));
+    button.disabled = state.restrictAdvancedColumns;
+  });
+
+  el.searchFilterRow.style.display = advancedVisible ? "flex" : "none";
+  el.searchColumnChooser.style.display = advancedVisible ? "block" : "none";
+  el.tabFilterRow.style.display = advancedVisible ? "flex" : "none";
+  el.tabColumnChooser.style.display = advancedVisible ? "block" : "none";
+
+  [el.exportSelectedSearchBtn, el.moveSelectedBtn, el.exportSelectedTabBtn, el.moveSelectedTabBtn].forEach((button) => {
+    if (!button) {
+      return;
+    }
+
+    button.style.display = selectedActionDisplay;
+  });
 }
 
 function setLoading(isLoading, message = "") {
@@ -969,13 +1034,7 @@ async function submitImportOptionsModal(event) {
     return;
   }
 
-  let maxCards;
-  try {
-    maxCards = parseMaxCards(el.maxCards.value);
-  } catch (err) {
-    alert(err.message);
-    return;
-  }
+  const maxCards = state.maxCards;
 
   const includeMultipleWhenNoNumber = Boolean(el.importAllowMultipleNoNumber.checked);
   closeImportOptionsModal();
@@ -1059,6 +1118,9 @@ function persistTabs() {
           keepSelectedOnSearch: state.keepSelectedOnSearch,
           clearSearchInputsOnSearch: state.clearSearchInputsOnSearch,
           sortSettingsBySelected: state.sortSettingsBySelected,
+          maxCards: state.maxCards,
+          enableAdvancedColumns: state.enableAdvancedColumns,
+            restrictAdvancedColumns: state.restrictAdvancedColumns,
           themePreference: state.themePreference,
           searchGridState: state.searchGridState,
           tabGridStates: state.tabGridStates,
@@ -1136,6 +1198,17 @@ function getColumnVisibilityForScope(scope) {
 }
 
 function getAllowedSpecialColumnIdsForScope(scope) {
+  if (!isAdvancedColumnsVisible()) {
+    // Simplified mode: only allow add and move buttons
+    if (scope === "search") {
+      return ["add"];
+    }
+    if (getTabById(scope)) {
+      return ["move"];
+    }
+    return [];
+  }
+
   if (scope === "search") {
     return ["select", "add", "copy", "index"];
   }
@@ -1149,7 +1222,14 @@ function getAllowedSpecialColumnIdsForScope(scope) {
 
 function getVisibleDataColumns(scope) {
   const visibility = getColumnVisibilityForScope(scope);
-  return getOrderedDataColumns().filter((column) => visibility.visibleColumnIds.has(column.id));
+  const orderedColumns = getOrderedDataColumns();
+
+  // Simplified mode: only show name, variant, and price columns
+  if (!isAdvancedColumnsVisible()) {
+    return orderedColumns.filter((column) => ["name", "variant", "market_price"].includes(column.id));
+  }
+
+  return orderedColumns.filter((column) => visibility.visibleColumnIds.has(column.id));
 }
 
 function getColumnWidth(columnId) {
@@ -1339,6 +1419,47 @@ function onSearchFilterInput() {
   renderSearchTable();
 }
 
+function onMaxCardsSettingChange() {
+  try {
+    state.maxCards = parseMaxCards(el.maxCardsSetting.value);
+    persistTabs();
+    renderSettingsPanel();
+  } catch (err) {
+    alert(err.message);
+    el.maxCardsSetting.value = String(state.maxCards);
+  }
+}
+
+function onEnableAdvancedColumnsChange() {
+  state.enableAdvancedColumns = el.enableAdvancedColumnsSetting.checked;
+  persistTabs();
+  renderPanels();
+}
+
+function onRestrictAdvancedColumnsChange() {
+  state.restrictAdvancedColumns = el.restrictAdvancedColumnsSetting.checked;
+  persistTabs();
+  renderPanels();
+}
+
+function toggleAdvancedColumns() {
+  if (state.restrictAdvancedColumns) {
+    return;
+  }
+
+  state.enableAdvancedColumns = !state.enableAdvancedColumns;
+  persistTabs();
+  renderPanels();
+}
+
+function onSearchAdvancedToggleClick() {
+  toggleAdvancedColumns();
+}
+
+function onTabAdvancedToggleClick() {
+  toggleAdvancedColumns();
+}
+
 function clearSearchFilterInput() {
   const gridState = getGridState("search");
   if (!gridState.filterText) {
@@ -1446,7 +1567,7 @@ function getSettingsSpecialColumnsInDisplayOrder() {
 }
 
 function isSpecialColumnVisible(columnId, scope) {
-  return getColumnVisibilityForScope(scope).visibleSpecialColumnIds.has(columnId);
+  return getAllowedSpecialColumnIdsForScope(scope).includes(columnId) && getColumnVisibilityForScope(scope).visibleSpecialColumnIds.has(columnId);
 }
 
 function getVisibleColumnSettingCount(scope) {
@@ -1870,6 +1991,10 @@ function renderSettingsPanel() {
   sortSettingsLabel.appendChild(sortSettingsText);
   behaviorFragment.appendChild(sortSettingsLabel);
 
+  el.maxCardsSetting.value = String(state.maxCards);
+  el.enableAdvancedColumnsSetting.checked = state.enableAdvancedColumns;
+  el.restrictAdvancedColumnsSetting.checked = state.restrictAdvancedColumns;
+  syncAdvancedViewControls();
   el.settingsBehaviorList.replaceChildren(behaviorFragment);
 }
 
@@ -1986,10 +2111,12 @@ function submitClearDataModal(event) {
   state.keepSelectedOnSearch = DEFAULT_KEEP_SELECTED_ON_SEARCH;
   state.clearSearchInputsOnSearch = DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH;
   state.sortSettingsBySelected = DEFAULT_SORT_SETTINGS_BY_SELECTED;
+  state.maxCards = DEFAULT_MAX_CARDS;
   state.columnOrderIds = [...DEFAULT_COLUMN_ORDER_IDS];
   state.columnWidths = {};
   state.themePreference = "system";
   state.tabGridStates = {};
+  state.restrictAdvancedColumns = DEFAULT_RESTRICT_ADVANCED_COLUMNS;
   state.selectedRows.search.clear();
   state.selectedRows.tabs = {};
 
@@ -2039,6 +2166,9 @@ function applyDefaultSettings() {
   state.keepSelectedOnSearch = DEFAULT_KEEP_SELECTED_ON_SEARCH;
   state.clearSearchInputsOnSearch = DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH;
   state.sortSettingsBySelected = DEFAULT_SORT_SETTINGS_BY_SELECTED;
+  state.maxCards = DEFAULT_MAX_CARDS;
+  state.enableAdvancedColumns = DEFAULT_ENABLE_ADVANCED_COLUMNS;
+  state.restrictAdvancedColumns = DEFAULT_RESTRICT_ADVANCED_COLUMNS;
   state.columnOrderIds = [...DEFAULT_COLUMN_ORDER_IDS];
   state.columnWidths = {};
   state.themePreference = "system";
@@ -2128,6 +2258,9 @@ function resetBehaviorSettings() {
   state.keepSelectedOnSearch = DEFAULT_KEEP_SELECTED_ON_SEARCH;
   state.clearSearchInputsOnSearch = DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH;
   state.sortSettingsBySelected = DEFAULT_SORT_SETTINGS_BY_SELECTED;
+  state.maxCards = DEFAULT_MAX_CARDS;
+  state.enableAdvancedColumns = DEFAULT_ENABLE_ADVANCED_COLUMNS;
+  state.restrictAdvancedColumns = DEFAULT_RESTRICT_ADVANCED_COLUMNS;
   persistTabs();
   renderSettingsPanel();
 }
@@ -2314,6 +2447,7 @@ function renderPanels() {
   const searchActive = state.activeTabId === "search";
   const helpActive = state.activeTabId === "help";
   const settingsActive = state.activeTabId === "settings";
+  syncAdvancedViewControls();
   el.searchPanel.classList.toggle("active", searchActive);
   el.tabPanel.classList.toggle("active", !searchActive && !helpActive && !settingsActive);
   el.helpPanel.classList.toggle("active", helpActive);
@@ -2357,6 +2491,7 @@ function renderSearchTable() {
     ? `${state.searchRows.length} cards`
     : `${visibleRows.length} of ${state.searchRows.length} cards`;
 
+  syncAdvancedViewControls();
   renderMarketTable(el.resultsBody, visibleRows, "search", "add");
   renderTableHead(el.resultsHead, [
     { id: "add", label: "Add" },
@@ -2382,6 +2517,7 @@ function renderTabTable(tab) {
     ? `${tab.rows.length} cards`
     : `${visibleRows.length} of ${tab.rows.length} cards`;
 
+  syncAdvancedViewControls();
   renderMarketTable(el.tabBody, visibleRows, tab.id, "removeMove");
   renderTableHead(el.tabHead, [
     { id: "remove", label: "Remove" },
@@ -2841,12 +2977,19 @@ function addSearchRowToTab(tabId) {
 }
 
 async function fetchJson(url) {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} - ${res.statusText}`);
-  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-  return res.json();
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} - ${res.statusText}`);
+    }
+
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchCardDetails(cardIds) {
@@ -2888,13 +3031,7 @@ async function onFetch() {
     return;
   }
 
-  let maxCards;
-  try {
-    maxCards = parseMaxCards(el.maxCards.value);
-  } catch (err) {
-    alert(err.message);
-    return;
-  }
+  const maxCards = state.maxCards;
 
   setActiveTab("search");
   setLoading(true, "Searching cards...");

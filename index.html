@@ -39,29 +39,24 @@
 
       <section id="searchPanel" class="tab-panel active">
         <section class="controls">
-          <label>
+          <label class="search-field">
             <span>Card Name Contains</span>
             <input id="cardName" type="text" placeholder="charizard" />
           </label>
 
-          <label>
+          <label class="search-field">
             <span>Card Number Contains</span>
             <input id="cardNumber" type="text" placeholder="221/105" />
           </label>
 
-          <label>
+          <label class="search-field">
             <span>Set Name Contains</span>
             <input id="setName" type="text" placeholder="base1" />
           </label>
 
-          <label>
+          <label class="search-field">
             <span>Set Code Contains</span>
             <input id="setCode" type="text" placeholder="sv2" />
-          </label>
-
-          <label>
-            <span>Max Cards</span>
-            <input id="maxCards" type="number" min="1" max="200" value="30" />
           </label>
 
           <div class="actions">
@@ -79,9 +74,17 @@
             <button id="selectAllSearchBtn" class="mini-btn" type="button">Select All</button>
             <button id="unselectAllSearchBtn" class="mini-btn" type="button">Unselect All</button>
             <button id="clearSearchSortBtn" class="mini-btn" type="button">Clear Sort</button>
+            <button id="searchAdvancedToggleBtn" class="mini-btn" type="button">Advanced</button>
           </div>
         </div>
-        <details class="column-chooser">
+        <div class="tab-grid-controls" id="searchFilterRow" style="display: none;">
+          <label class="tab-filter-field">
+            <span>Filter rows</span>
+            <input id="searchFilterInput" type="search" placeholder="Search by any visible field" />
+          </label>
+          <button id="clearSearchFilterBtn" class="secondary-btn" type="button">Clear Filter</button>
+        </div>
+        <details id="searchColumnChooser" class="column-chooser" style="display: none;">
           <summary>Columns</summary>
           <div class="column-chooser-tools">
             <button id="searchColumnsSelectAllBtn" class="mini-btn" type="button">Select All</button>
@@ -98,13 +101,6 @@
             </div>
           </div>
         </details>
-          <div class="tab-grid-controls">
-            <label class="tab-filter-field">
-              <span>Filter rows</span>
-              <input id="searchFilterInput" type="search" placeholder="Search by any visible field" />
-            </label>
-            <button id="clearSearchFilterBtn" class="secondary-btn" type="button">Clear Filter</button>
-          </div>
 
         <section class="table-wrap">
           <table id="resultsTable">
@@ -154,7 +150,7 @@
             </div>
           </div>
 
-          <div class="tab-grid-controls">
+          <div class="tab-grid-controls" id="tabFilterRow" style="display: none;">
             <label class="tab-filter-field">
               <span>Filter rows</span>
               <input id="tabFilterInput" type="search" placeholder="Search by any visible field" />
@@ -168,10 +164,10 @@
               <button id="selectAllTabBtn" class="mini-btn" type="button">Select All</button>
               <button id="unselectAllTabBtn" class="mini-btn" type="button">Unselect All</button>
               <button id="clearTabSortBtn" class="mini-btn" type="button">Clear Sort</button>
+              <button id="tabAdvancedToggleBtn" class="mini-btn" type="button">Advanced</button>
             </div>
           </div>
-
-          <details class="column-chooser">
+          <details id="tabColumnChooser" class="column-chooser" style="display: none;">
             <summary>Columns</summary>
             <div class="column-chooser-tools">
               <button id="tabColumnsSelectAllBtn" class="mini-btn" type="button">Select All</button>
@@ -322,6 +318,18 @@
                 <button id="behaviorResetBtn" class="secondary-btn section-tool-btn" type="button">Reset to Default</button>
               </div>
             </div>
+            <label class="setting-toggle setting-toggle-number">
+              <span>Max cards per search/import request</span>
+              <input id="maxCardsSetting" type="number" min="1" max="200" value="100" />
+            </label>
+            <label class="setting-toggle" id="enableAdvancedColumnsWrapper" style="display: none;">
+              <input id="enableAdvancedColumnsSetting" type="checkbox" checked />
+              <span>Enable advanced columns</span>
+            </label>
+            <label class="setting-toggle" id="restrictAdvancedColumnsWrapper">
+              <input id="restrictAdvancedColumnsSetting" type="checkbox" />
+              <span>Restrict to simplified columns only</span>
+            </label>
             <div id="settingsBehaviorList" class="settings-column-list"></div>
           </div>
 
@@ -532,3 +540,4 @@
     <script src="app.js"></script>
   </body>
 </html>
+

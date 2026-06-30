@@ -63,6 +63,7 @@ body {
   font-family: "Space Grotesk", sans-serif;
   color: var(--ink);
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
 }
 
@@ -77,12 +78,12 @@ body {
 
 .app-shell {
   width: min(1400px, 96vw);
-  margin: 18px auto;
+  margin: clamp(10px, 2vw, 18px) auto;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: 0 18px 50px #0022441a;
-  padding: 18px;
+  padding: clamp(12px, 2vw, 18px);
 }
 
 .app-header h1 {
@@ -267,7 +268,7 @@ body {
 .controls {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(150px, 1fr)) auto;
   gap: 10px;
   align-items: end;
   padding-bottom: 12px;
@@ -296,7 +297,8 @@ input {
 .actions {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .actions button,
@@ -531,6 +533,18 @@ button:disabled {
   font-size: 0.92rem;
 }
 
+.setting-toggle-number {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(84px, 140px);
+  align-items: center;
+  gap: 12px;
+}
+
+.setting-toggle-number input {
+  width: 100%;
+}
+
 .tab-workspace {
   margin-top: 14px;
 }
@@ -609,6 +623,15 @@ button:disabled {
   background: var(--control-hover);
 }
 
+.mini-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.mini-btn.active:hover {
+  background: var(--accent-2);
+}
+
 .hidden {
   display: none !important;
 }
@@ -663,12 +686,12 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow: auto;
-  max-height: 68vh;
+  max-height: clamp(300px, 68dvh, 820px);
 }
 
 table {
   border-collapse: collapse;
-  min-width: 1240px;
+  min-width: 1080px;
   width: 100%;
 }
 
@@ -856,6 +879,8 @@ tfoot td {
 
 .modal-card {
   width: min(520px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -1021,25 +1046,140 @@ tfoot td {
 }
 
 @media (max-width: 980px) {
+  #enableAdvancedColumnsWrapper {
+    display: block !important;
+  }
+
+  .app-shell {
+    width: min(100%, 96vw);
+    border-radius: 14px;
+  }
+
   .tabs {
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    row-gap: 8px;
+    column-gap: 8px;
+    padding-bottom: 4px;
+  }
+
+  .tab-spacer {
+    display: none;
+  }
+
+  #tabSearch {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    width: 100%;
+  }
+
+  #addTabBtn {
+    grid-column: 1;
+    grid-row: 2;
+    flex: 0 0 auto;
   }
 
   .tab-list {
-    width: 100%;
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: visible;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    white-space: nowrap;
+    padding-top: 4px;
+    padding-bottom: 8px;
+    padding-right: 2px;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    gap: 8px;
+  }
+
+  .tab-list .tab-btn.active {
+    transform: none;
+  }
+
+  #tabHelp {
+    grid-column: 3;
+    grid-row: 2;
+    margin-left: 0;
+  }
+
+  #tabSettings {
+    grid-column: 4;
+    grid-row: 2;
+  }
+
+  .tab-btn,
+  .tab-add {
+    flex: 0 0 auto;
   }
 
   .tab-toolbar {
     flex-direction: column;
+    align-items: flex-start;
   }
 
   .controls {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .search-field {
+    min-width: 0;
+  }
+
+  .actions {
+    grid-column: 1 / -1;
+  }
+
+  .actions,
+  .sheet-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .actions button,
+  .sheet-actions button {
+    width: 100%;
   }
 
   .status-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .grid-summary-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .grid-summary-actions .mini-btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  .tab-grid-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .tab-filter-field {
+    min-width: 0;
+  }
+
+  .tab-grid-controls .secondary-btn {
+    white-space: nowrap;
   }
 
   .color-list {
@@ -1048,5 +1188,102 @@ tfoot td {
 
   .column-chooser-groups {
     grid-template-columns: 1fr;
+  }
+
+  .table-wrap {
+    max-height: clamp(260px, 54dvh, 640px);
+  }
+
+  table {
+    min-width: 920px;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    width: 100%;
+    margin: 0;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+
+  .tabs {
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto auto auto;
+    row-gap: 6px;
+    column-gap: 6px;
+  }
+
+  #tabSearch {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    width: 100%;
+  }
+
+  .tab-list {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  #addTabBtn {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  #tabHelp {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  #tabSettings {
+    grid-column: 3;
+    grid-row: 3;
+  }
+
+  .actions,
+  .sheet-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid-summary-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tab-title-row {
+    flex-wrap: wrap;
+  }
+
+  .tab-grid-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .setting-toggle-number {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-card {
+    width: calc(100% - 24px);
+    max-height: 85vh;
+  }
+
+  .table-wrap {
+    max-height: clamp(230px, 50dvh, 520px);
+  }
+
+  table {
+    min-width: 840px;
+  }
+}
+
+@media (max-aspect-ratio: 3/4) {
+  .table-wrap {
+    max-height: clamp(220px, 48dvh, 560px);
+  }
+}
+
+@media (min-aspect-ratio: 16/9) {
+  .table-wrap {
+    max-height: clamp(320px, 72dvh, 920px);
   }
 }
