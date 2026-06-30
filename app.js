@@ -1,29 +1,52 @@
 const API_BASE = "https://api.tcgdex.net/v2/en/cards";
 
 const state = {
-  rows: [],
+  searchRows: [],
+  sheetRows: [],
 };
 
 const el = {
   cardName: document.getElementById("cardName"),
   setName: document.getElementById("setName"),
+  cardNumber: document.getElementById("cardNumber"),
+  setCode: document.getElementById("setCode"),
   maxCards: document.getElementById("maxCards"),
   fetchBtn: document.getElementById("fetchBtn"),
-  exportBtn: document.getElementById("exportBtn"),
+  exportSearchBtn: document.getElementById("exportSearchBtn"),
+  exportSheetBtn: document.getElementById("exportSheetBtn"),
+  clearSheetBtn: document.getElementById("clearSheetBtn"),
   statusText: document.getElementById("statusText"),
   loadingWrap: document.getElementById("loadingWrap"),
   loadingText: document.getElementById("loadingText"),
+  tabSearch: document.getElementById("tabSearch"),
+  tabSheet: document.getElementById("tabSheet"),
+  searchPanel: document.getElementById("searchPanel"),
+  sheetPanel: document.getElementById("sheetPanel"),
   resultsBody: document.getElementById("resultsBody"),
+  sheetBody: document.getElementById("sheetBody"),
 };
 
 el.fetchBtn.addEventListener("click", onFetch);
-el.exportBtn.addEventListener("click", onExport);
+el.exportSearchBtn.addEventListener("click", () => onExport(state.searchRows, "search_market_data.xlsx"));
+el.exportSheetBtn.addEventListener("click", () => onExport(state.sheetRows, "current_sheet_market_data.xlsx"));
+el.clearSheetBtn.addEventListener("click", onClearSheet);
+el.tabSearch.addEventListener("click", () => switchTab("search"));
+el.tabSheet.addEventListener("click", () => switchTab("sheet"));
 
 function setLoading(isLoading, message = "") {
   el.fetchBtn.disabled = isLoading;
-  el.exportBtn.disabled = isLoading;
+  el.exportSearchBtn.disabled = isLoading;
+  el.exportSheetBtn.disabled = isLoading;
   el.loadingWrap.classList.toggle("active", isLoading);
   el.loadingText.textContent = message || "Loading...";
+}
+
+function switchTab(tabName) {
+  const searchActive = tabName === "search";
+  el.tabSearch.classList.toggle("active", searchActive);
+  el.tabSheet.classList.toggle("active", !searchActive);
+  el.searchPanel.classList.toggle("active", searchActive);
+  el.sheetPanel.classList.toggle("active", !searchActive);
 }
 
 function setStatus(message) {
@@ -42,11 +65,30 @@ function toNumberOrBlank(value) {
   return typeof value === "number" ? value : "";
 }
 
+function normalize(value) {
+  return String(value ?? "").toLowerCase();
+}
+
+function buildCardNumber(card) {
+  const localId = card?.localId ?? "";
+  const officialCount = card?.set?.cardCount?.official ?? card?.set?.cardCount?.total ?? "";
+  if (!localId) return "";
+  if (String(localId).includes("/")) return String(localId);
+  if (!officialCount) return String(localId);
+  return `${localId}/${officialCount}`;
+}
+
+function rowKey(row) {
+  return [row.card_id, row.source, row.variant, row.card_number, row.market_price, row.updated].join("|");
+}
+
 function flattenMarketRows(cards) {
   const rows = [];
 
   for (const card of cards) {
     const setName = card?.set?.name ?? "";
+    const setCode = card?.set?.id ?? "";
+    const cardNumber = buildCardNumber(card);
     const pricing = card?.pricing ?? {};
 
     const cardmarket = pricing.cardmarket;
@@ -54,7 +96,9 @@ function flattenMarketRows(cards) {
       rows.push({
         card_id: card.id ?? "",
         name: card.name ?? "",
+        card_number: cardNumber,
         set_name: setName,
+        set_code: setCode,
         source: "cardmarket",
         variant: "standard",
         market_price: toNumberOrBlank(cardmarket.trend),
@@ -84,7 +128,9 @@ function flattenMarketRows(cards) {
         rows.push({
           card_id: card.id ?? "",
           name: card.name ?? "",
+          card_number: cardNumber,
           set_name: setName,
+          set_code: setCode,
           source: "tcgplayer",
           variant: variantName,
           market_price: toNumberOrBlank(variantData.marketPrice),
@@ -103,18 +149,37 @@ function flattenMarketRows(cards) {
   return rows;
 }
 
-function renderTable(rows) {
+function renderSearchTable(rows) {
   el.resultsBody.innerHTML = "";
 
   const fragment = document.createDocumentFragment();
+  const sheetKeys = new Set(state.sheetRows.map((row) => rowKey(row)));
 
   rows.forEach((row, index) => {
     const tr = document.createElement("tr");
+    const inSheet = sheetKeys.has(rowKey(row));
+    if (inSheet) {
+      tr.classList.add("in-sheet");
+    }
+
+    const actionTd = document.createElement("td");
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "row-action-btn";
+    addBtn.textContent = "+";
+    addBtn.title = "Add row to current sheet";
+    addBtn.disabled = inSheet;
+    addBtn.addEventListener("click", () => addToSheet(row));
+    actionTd.appendChild(addBtn);
+    tr.appendChild(actionTd);
+
     const orderedValues = [
       index + 1,
       row.card_id,
       row.name,
+      row.card_number,
       row.set_name,
+      row.set_code,
       row.source,
       row.variant,
       row.market_price,
@@ -137,6 +202,96 @@ function renderTable(rows) {
   });
 
   el.resultsBody.appendChild(fragment);
+}
+
+function renderSheetTable(rows) {
+  el.sheetBody.innerHTML = "";
+
+  const fragment = document.createDocumentFragment();
+
+  rows.forEach((row, index) => {
+    const tr = document.createElement("tr");
+
+    const actionTd = document.createElement("td");
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "row-action-btn remove";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", () => removeFromSheet(index));
+    actionTd.appendChild(removeBtn);
+    tr.appendChild(actionTd);
+
+    const orderedValues = [
+      index + 1,
+      row.card_id,
+      row.name,
+      row.card_number,
+      row.set_name,
+      row.set_code,
+      row.source,
+      row.variant,
+      row.market_price,
+      row.low_price,
+      row.mid_price,
+      row.high_price,
+      row.avg_price,
+      row.trend_price,
+      row.currency,
+      row.updated,
+    ];
+
+    for (const value of orderedValues) {
+      const td = document.createElement("td");
+      td.textContent = value ?? "";
+      tr.appendChild(td);
+    }
+
+    fragment.appendChild(tr);
+  });
+
+  el.sheetBody.appendChild(fragment);
+}
+
+function addToSheet(row) {
+  const key = rowKey(row);
+  const hasMatch = state.sheetRows.some((candidate) => rowKey(candidate) === key);
+  if (!hasMatch) {
+    state.sheetRows.push({ ...row });
+    renderSheetTable(state.sheetRows);
+    renderSearchTable(state.searchRows);
+    setStatus(`Added row to current sheet. ${state.sheetRows.length} rows in current sheet.`);
+  }
+}
+
+function removeFromSheet(index) {
+  state.sheetRows.splice(index, 1);
+  renderSheetTable(state.sheetRows);
+  renderSearchTable(state.searchRows);
+  setStatus(`Removed row. ${state.sheetRows.length} rows in current sheet.`);
+}
+
+function onClearSheet() {
+  state.sheetRows = [];
+  renderSheetTable(state.sheetRows);
+  renderSearchTable(state.searchRows);
+  setStatus("Cleared current sheet.");
+}
+
+function filterCards(cards, filters) {
+  return cards.filter((card) => {
+    const cardName = normalize(card?.name);
+    const setName = normalize(card?.set?.name);
+    const setCode = normalize(card?.set?.id);
+    const cardNumber = normalize(buildCardNumber(card));
+    const localId = normalize(card?.localId);
+
+    if (filters.cardName && !cardName.includes(filters.cardName)) return false;
+    if (filters.setName && !setName.includes(filters.setName)) return false;
+    if (filters.setCode && !setCode.includes(filters.setCode)) return false;
+    if (filters.cardNumber && !(cardNumber.includes(filters.cardNumber) || localId.includes(filters.cardNumber))) return false;
+
+    return true;
+  });
 }
 
 async function fetchJson(url) {
@@ -176,9 +331,11 @@ async function fetchCardDetails(cardIds) {
 async function onFetch() {
   const cardName = el.cardName.value.trim();
   const setName = el.setName.value.trim();
+  const cardNumber = el.cardNumber.value.trim();
+  const setCode = el.setCode.value.trim();
 
-  if (!cardName && !setName) {
-    alert("Provide at least Card Name Contains or Set Name Contains.");
+  if (!cardName && !setName && !cardNumber && !setCode) {
+    alert("Provide at least one search field.");
     return;
   }
 
@@ -196,7 +353,13 @@ async function onFetch() {
   try {
     const params = new URLSearchParams();
     if (cardName) params.set("name", cardName);
-    if (setName) params.set("set", setName);
+    if (setCode) {
+      params.set("set", setCode);
+    } else if (setName) {
+      params.set("set", setName);
+    } else if (cardNumber) {
+      params.set("localId", cardNumber);
+    }
 
     const summaries = await fetchJson(`${API_BASE}?${params.toString()}`);
     if (!Array.isArray(summaries)) {
@@ -205,13 +368,20 @@ async function onFetch() {
 
     const cardIds = summaries.slice(0, maxCards).map((item) => item.id).filter(Boolean);
     const cards = await fetchCardDetails(cardIds);
-    state.rows = flattenMarketRows(cards);
-    renderTable(state.rows);
+    const filteredCards = filterCards(cards, {
+      cardName: normalize(cardName),
+      setName: normalize(setName),
+      cardNumber: normalize(cardNumber),
+      setCode: normalize(setCode),
+    });
 
-    if (state.rows.length === 0) {
+    state.searchRows = flattenMarketRows(filteredCards);
+    renderSearchTable(state.searchRows);
+
+    if (state.searchRows.length === 0) {
       setStatus("No market price rows found for this query. Try a different query.");
     } else {
-      setStatus(`Loaded ${state.rows.length} market price rows.`);
+      setStatus(`Loaded ${state.searchRows.length} market price rows.`);
     }
   } catch (err) {
     setStatus("Fetch failed.");
@@ -221,13 +391,13 @@ async function onFetch() {
   }
 }
 
-function onExport() {
-  if (!state.rows.length) {
+function onExport(rows, fileName) {
+  if (!rows.length) {
     alert("Fetch market data before exporting.");
     return;
   }
 
-  const exportRows = state.rows.map((row, idx) => ({
+  const exportRows = rows.map((row, idx) => ({
     row_no: idx + 1,
     ...row,
   }));
@@ -235,5 +405,8 @@ function onExport() {
   const worksheet = XLSX.utils.json_to_sheet(exportRows);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "MarketData");
-  XLSX.writeFile(workbook, "pokemon_market_data.xlsx");
+  XLSX.writeFile(workbook, fileName);
 }
+
+renderSearchTable(state.searchRows);
+renderSheetTable(state.sheetRows);
