@@ -17,116 +17,239 @@
     <main class="app-shell">
       <header class="app-header">
         <h1>PokePricesToExcel</h1>
-        <p>Free Pokemon TCG market data from TCGdex with one-click Excel export.</p>
+        <p>Search Pokemon TCG prices, move selected rows into color-coded tabs, and keep those tabs saved locally.</p>
       </header>
 
-      <section class="controls">
-        <label>
-          <span>Card Name Contains</span>
-          <input id="cardName" type="text" placeholder="charizard" />
-        </label>
-
-        <label>
-          <span>Set Name Contains</span>
-          <input id="setName" type="text" placeholder="base1" />
-        </label>
-
-        <label>
-          <span>Card Number Contains</span>
-          <input id="cardNumber" type="text" placeholder="221/105" />
-        </label>
-
-        <label>
-          <span>Set Code Contains</span>
-          <input id="setCode" type="text" placeholder="sv2" />
-        </label>
-
-        <label>
-          <span>Max Cards</span>
-          <input id="maxCards" type="number" min="1" max="200" value="30" />
-        </label>
-
-        <div class="actions">
-          <button id="fetchBtn" type="button">Fetch Market Data</button>
-          <button id="exportSearchBtn" type="button">Export Search Grid</button>
-        </div>
+      <section class="tabs" aria-label="Tabs">
+        <button id="tabSearch" class="tab-btn search-tab active" type="button">Search</button>
+        <div id="dynamicTabs" class="tab-list"></div>
+        <button id="addTabBtn" class="tab-add" type="button" aria-label="Add tab">+</button>
+        <div class="tab-spacer" aria-hidden="true"></div>
+        <button id="tabSettings" class="tab-btn settings-tab" type="button" aria-label="Settings">⚙</button>
       </section>
 
       <section class="status-row">
-        <p id="statusText">Enter card name and/or set name, then click Fetch Market Data.</p>
+        <p id="statusText">Use Search to find cards, select the rows you want, then move them into a tab.</p>
         <div id="loadingWrap" class="loading-wrap" aria-live="polite">
           <div class="spinner" aria-hidden="true"></div>
           <span id="loadingText">Loading...</span>
         </div>
       </section>
 
-      <section class="tabs">
-        <button id="tabSearch" class="tab-btn active" type="button">Search Results</button>
-        <button id="tabSheet" class="tab-btn" type="button">Current Sheet</button>
-      </section>
-
       <section id="searchPanel" class="tab-panel active">
+        <section class="controls">
+          <label>
+            <span>Card Name Contains</span>
+            <input id="cardName" type="text" placeholder="charizard" />
+          </label>
+
+          <label>
+            <span>Set Name Contains</span>
+            <input id="setName" type="text" placeholder="base1" />
+          </label>
+
+          <label>
+            <span>Card Number Contains</span>
+            <input id="cardNumber" type="text" placeholder="221/105" />
+          </label>
+
+          <label>
+            <span>Set Code Contains</span>
+            <input id="setCode" type="text" placeholder="sv2" />
+          </label>
+
+          <label>
+            <span>Max Cards</span>
+            <input id="maxCards" type="number" min="1" max="200" value="30" />
+          </label>
+
+          <div class="actions">
+            <button id="fetchBtn" type="button">Fetch Market Data</button>
+            <button id="exportSearchBtn" type="button">Export Search Grid</button>
+            <button id="exportSelectedSearchBtn" type="button">Export Selected</button>
+            <button id="moveSelectedBtn" type="button">Move Selected</button>
+          </div>
+        </section>
+
+        <div class="grid-summary-row">
+          <p id="searchCountText" class="grid-summary-count"></p>
+          <div class="grid-summary-actions">
+            <button id="selectAllSearchBtn" class="mini-btn" type="button">Select All</button>
+            <button id="unselectAllSearchBtn" class="mini-btn" type="button">Unselect All</button>
+          </div>
+        </div>
+
         <section class="table-wrap">
           <table id="resultsTable">
-            <thead>
-              <tr>
-                <th>+</th>
-                <th>#</th>
-                <th>card_id</th>
-                <th>name</th>
-                <th>card_number</th>
-                <th>set_name</th>
-                <th>set_code</th>
-                <th>source</th>
-                <th>variant</th>
-                <th>market_price</th>
-                <th>low_price</th>
-                <th>mid_price</th>
-                <th>high_price</th>
-                <th>avg_price</th>
-                <th>trend_price</th>
-                <th>currency</th>
-                <th>updated</th>
-              </tr>
-            </thead>
+            <thead id="resultsHead"></thead>
             <tbody id="resultsBody"></tbody>
           </table>
         </section>
       </section>
 
-      <section id="sheetPanel" class="tab-panel">
-        <div class="sheet-actions">
-          <button id="clearSheetBtn" type="button">Clear Current Sheet</button>
-          <button id="exportSheetBtn" type="button">Export Current Sheet</button>
-        </div>
+      <section id="tabPanel" class="tab-panel">
+        <div class="tab-workspace">
+          <div class="tab-toolbar">
+            <div class="tab-title-block">
+              <p class="tab-eyebrow">Active tab</p>
+              <div class="tab-title-row">
+                <h2 id="activeTabTitle">Tab</h2>
+                <button id="editActiveTabBtn" class="tab-edit-btn" type="button">✎</button>
+                <button id="deleteActiveTabBtn" class="tab-delete-btn" type="button" aria-label="Delete tab">🗑</button>
+              </div>
+            </div>
 
-        <section class="table-wrap">
-          <table id="sheetTable">
-            <thead>
-              <tr>
-                <th>remove</th>
-                <th>#</th>
-                <th>card_id</th>
-                <th>name</th>
-                <th>card_number</th>
-                <th>set_name</th>
-                <th>set_code</th>
-                <th>source</th>
-                <th>variant</th>
-                <th>market_price</th>
-                <th>low_price</th>
-                <th>mid_price</th>
-                <th>high_price</th>
-                <th>avg_price</th>
-                <th>trend_price</th>
-                <th>currency</th>
-                <th>updated</th>
-              </tr>
-            </thead>
-            <tbody id="sheetBody"></tbody>
-          </table>
-        </section>
+            <div class="sheet-actions">
+              <button id="refreshTabBtn" type="button">Refresh Prices</button>
+              <button id="exportTabBtn" type="button">Export All</button>
+              <button id="exportSelectedTabBtn" type="button">Export Selected</button>
+              <button id="moveSelectedTabBtn" type="button">Move Selected</button>
+              <button id="removeSelectedBtn" type="button">Remove Selected</button>
+              <button id="clearTabBtn" type="button">Clear Tab</button>
+            </div>
+          </div>
+
+          <div class="grid-summary-row tab-summary-row">
+            <p id="activeTabMeta" class="grid-summary-count"></p>
+            <div class="grid-summary-actions">
+              <button id="selectAllTabBtn" class="mini-btn" type="button">Select All</button>
+              <button id="unselectAllTabBtn" class="mini-btn" type="button">Unselect All</button>
+            </div>
+          </div>
+
+          <section class="table-wrap">
+            <table id="tabTable">
+              <thead id="tabHead"></thead>
+              <tfoot id="tabFoot"></tfoot>
+              <tbody id="tabBody"></tbody>
+            </table>
+          </section>
+        </div>
       </section>
+
+      <section id="settingsPanel" class="tab-panel">
+        <div class="settings-panel">
+          <div class="settings-header">
+            <div>
+              <p class="tab-eyebrow">Settings</p>
+              <h2>Column visibility</h2>
+              <p class="settings-note">Choose which columns appear across Search and all saved tabs.</p>
+            </div>
+            <button id="clearLocalDataBtn" class="danger-btn" type="button">Clear All Local Data</button>
+          </div>
+
+          <div id="settingsColumnList" class="settings-column-list"></div>
+
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h3>Allowed sources</h3>
+              <p class="settings-note">Choose which sources can create rows when cards are fetched.</p>
+            </div>
+            <div id="settingsSourceList" class="settings-column-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <div id="clearDataModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="clearDataModalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="tab-eyebrow">Clear data</p>
+              <h2 id="clearDataModalTitle">Remove all local data?</h2>
+            </div>
+            <button id="clearDataModalCloseBtn" class="modal-close" type="button" aria-label="Close clear data popup">×</button>
+          </div>
+
+          <form id="clearDataModalForm" class="modal-form">
+            <p id="clearDataModalNote" class="modal-note">This deletes saved tabs and settings from this browser only. The data cannot be restored.</p>
+
+            <div class="modal-actions">
+              <button id="clearDataModalCancelBtn" type="button" class="secondary-btn">Cancel</button>
+              <button id="clearDataModalConfirmBtn" type="submit" class="danger-btn">Clear All Data</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div id="tabModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="tabModalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="tab-eyebrow">New tab</p>
+              <h2 id="tabModalTitle">Create a tab</h2>
+            </div>
+            <button id="tabModalCloseBtn" class="modal-close" type="button" aria-label="Close tab popup">×</button>
+          </div>
+
+          <form id="tabModalForm" class="modal-form">
+            <p id="tabModalNote" class="modal-note"></p>
+
+            <label>
+              <span>Tab name</span>
+              <input id="tabModalName" type="text" maxlength="32" />
+            </label>
+
+            <div class="color-picker-block">
+              <span>Tab color</span>
+              <div id="tabColorList" class="color-list" role="radiogroup" aria-label="Tab color choices"></div>
+            </div>
+
+            <div class="modal-actions">
+              <button id="tabModalCancelBtn" type="button" class="secondary-btn">Cancel</button>
+              <button id="tabModalCreateBtn" type="submit">Create Tab</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div id="moveModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="moveModalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="tab-eyebrow">Move selected</p>
+              <h2 id="moveModalTitle">Choose a destination tab</h2>
+            </div>
+            <button id="moveModalCloseBtn" class="modal-close" type="button" aria-label="Close move popup">×</button>
+          </div>
+
+          <form id="moveModalForm" class="modal-form">
+            <p id="moveModalCount" class="modal-note"></p>
+
+            <label>
+              <span>Destination tab</span>
+              <select id="moveModalSelect"></select>
+            </label>
+
+            <div class="modal-actions">
+              <button id="moveModalCancelBtn" type="button" class="secondary-btn">Cancel</button>
+              <button id="moveModalMoveBtn" type="submit">Move Rows</button>
+            </div>
+
+            <button id="moveModalNewTabBtn" type="button" class="secondary-btn modal-bottom-btn">New Tab</button>
+          </form>
+        </div>
+      </div>
+
+      <div id="deleteModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="tab-eyebrow">Delete tab</p>
+              <h2 id="deleteModalTitle">Are you sure?</h2>
+            </div>
+            <button id="deleteModalCloseBtn" class="modal-close" type="button" aria-label="Close delete popup">×</button>
+          </div>
+
+          <form id="deleteModalForm" class="modal-form">
+            <p id="deleteModalNote" class="modal-note"></p>
+
+            <div class="modal-actions">
+              <button id="deleteModalCancelBtn" type="button" class="secondary-btn">Cancel</button>
+              <button id="deleteModalDeleteBtn" type="submit" class="danger-btn">Delete Tab</button>
+            </div>
+          </form>
+        </div>
+      </div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>

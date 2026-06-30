@@ -7,12 +7,12 @@ Static web app (HTML/CSS/JavaScript) that fetches Pokemon TCG market pricing fro
 - No API key required
 - Search by card name, set name, card number, and set code
 - Loading indicator during API fetch
-- Row numbers on the left
-- Alternating white/light gray table rows
-- Two tabs: Search Results and Current Sheet
-- Add rows from Search Results to Current Sheet with a `+` button
-- Remove individual rows from Current Sheet and clear all rows
-- Excel export (`.xlsx`) available on both grids using SheetJS (CDN)
+- Row selection checkboxes on the left
+- Search tab plus dynamically created color-coded tabs
+- Move selected search rows into a chosen tab
+- Remove selected rows, clear a tab, refresh prices, and export all rows
+- Tab data persists in local browser storage across sessions
+- Excel export (`.xlsx`) available on search and tab grids using SheetJS (CDN)
 
 ## Run Locally
 
@@ -40,9 +40,9 @@ http://localhost:8000
 3. You can also use **Card Number Contains** (example: `221/105`) and **Set Code Contains** (example: `sv2`).
 4. Set **Max Cards** (1-200).
 5. Click **Fetch Market Data**.
-6. Use the left `+` action on Search Results rows to add them to **Current Sheet**.
-7. In **Current Sheet**, remove rows with **Remove**, or clear all with **Clear Current Sheet**.
-8. Export either grid with its export button.
+6. Select one or more search rows with the left checkboxes.
+7. Click **Move Selected** and choose the destination tab.
+8. Open a tab to remove selected rows, clear the tab, refresh prices, or export all rows.
 
 ## Deployment
 
