@@ -290,7 +290,8 @@ const el = {
   tabHead: document.getElementById("tabHead"),
   tabBody: document.getElementById("tabBody"),
   tabFoot: document.getElementById("tabFoot"),
-  settingsColumnList: document.getElementById("settingsColumnList"),
+  settingsFunctionalColumnList: document.getElementById("settingsFunctionalColumnList"),
+  settingsDisplayColumnList: document.getElementById("settingsDisplayColumnList"),
   settingsSourceList: document.getElementById("settingsSourceList"),
   settingsBehaviorList: document.getElementById("settingsBehaviorList"),
   clearLocalDataBtn: document.getElementById("clearLocalDataBtn"),
@@ -604,7 +605,8 @@ function renderTableHead(headElement, actionLabels = []) {
 }
 
 function renderSettingsPanel() {
-  const fragment = document.createDocumentFragment();
+  const functionalFragment = document.createDocumentFragment();
+  const displayFragment = document.createDocumentFragment();
 
   getSettingsSpecialColumnsInDisplayOrder().forEach((column) => {
     const label = document.createElement("label");
@@ -640,7 +642,7 @@ function renderSettingsPanel() {
 
     label.appendChild(input);
     label.appendChild(text);
-    fragment.appendChild(label);
+    functionalFragment.appendChild(label);
   });
 
   getSettingsColumnsInDisplayOrder().forEach((column) => {
@@ -677,10 +679,11 @@ function renderSettingsPanel() {
 
     label.appendChild(input);
     label.appendChild(text);
-    fragment.appendChild(label);
+    displayFragment.appendChild(label);
   });
 
-  el.settingsColumnList.replaceChildren(fragment);
+  el.settingsFunctionalColumnList.replaceChildren(functionalFragment);
+  el.settingsDisplayColumnList.replaceChildren(displayFragment);
 
   const sourceFragment = document.createDocumentFragment();
 
