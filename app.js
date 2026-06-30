@@ -66,6 +66,13 @@ function normalize(value) {
   return String(value ?? "").toLowerCase();
 }
 
+function normalizeHeader(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function toNumberOrBlank(value) {
   return typeof value === "number" ? value : "";
 }
@@ -236,9 +243,17 @@ const el = {
   setCode: document.getElementById("setCode"),
   maxCards: document.getElementById("maxCards"),
   fetchBtn: document.getElementById("fetchBtn"),
-  exportSearchBtn: document.getElementById("exportSearchBtn"),
   exportSelectedSearchBtn: document.getElementById("exportSelectedSearchBtn"),
   moveSelectedBtn: document.getElementById("moveSelectedBtn"),
+  importFileInput: document.getElementById("importFileInput"),
+  importFileBtn: document.getElementById("importFileBtn"),
+  importAllowMultipleNoNumber: document.getElementById("importAllowMultipleNoNumber"),
+  importOptionsModal: document.getElementById("importOptionsModal"),
+  importOptionsModalCloseBtn: document.getElementById("importOptionsModalCloseBtn"),
+  importOptionsModalForm: document.getElementById("importOptionsModalForm"),
+  importOptionsFileName: document.getElementById("importOptionsFileName"),
+  importOptionsCancelBtn: document.getElementById("importOptionsCancelBtn"),
+  importOptionsConfirmBtn: document.getElementById("importOptionsConfirmBtn"),
   selectAllSearchBtn: document.getElementById("selectAllSearchBtn"),
   unselectAllSearchBtn: document.getElementById("unselectAllSearchBtn"),
   addTabBtn: document.getElementById("addTabBtn"),
@@ -336,11 +351,20 @@ const el = {
 };
 
 el.fetchBtn.addEventListener("click", onFetch);
-el.exportSearchBtn.addEventListener("click", () => onExport(state.searchRows, "search_market_data.xlsx", "SearchData"));
+el.importFileBtn.addEventListener("click", onImportButtonClick);
+el.importFileInput.addEventListener("change", onImportFileSelected);
 el.exportSelectedSearchBtn.addEventListener("click", exportSelectedSearchRows);
 el.moveSelectedBtn.addEventListener("click", moveSelectedSearchRows);
 el.selectAllSearchBtn.addEventListener("click", selectAllSearchRows);
 el.unselectAllSearchBtn.addEventListener("click", unselectAllSearchRows);
+el.importOptionsModalCloseBtn.addEventListener("click", closeImportOptionsModal);
+el.importOptionsCancelBtn.addEventListener("click", closeImportOptionsModal);
+el.importOptionsModalForm.addEventListener("submit", submitImportOptionsModal);
+el.importOptionsModal.addEventListener("click", (event) => {
+  if (event.target === el.importOptionsModal) {
+    closeImportOptionsModal();
+  }
+});
 el.addTabBtn.addEventListener("click", addNewTab);
 el.refreshTabBtn.addEventListener("click", refreshActiveTab);
 el.exportTabBtn.addEventListener("click", exportActiveTab);
@@ -475,6 +499,11 @@ const resetSettingsModalState = {
   isOpen: false,
 };
 
+const importOptionsModalState = {
+  isOpen: false,
+  pendingFile: null,
+};
+
 const addRowModalState = {
   isOpen: false,
   row: null,
@@ -527,7 +556,8 @@ function syncButtons() {
   const activeSelection = activeTab ? getSelectionSet(activeTab.id).size : 0;
 
   el.fetchBtn.disabled = state.isLoading;
-  el.exportSearchBtn.disabled = state.isLoading || !state.searchRows.length;
+  el.importFileBtn.disabled = state.isLoading;
+  el.importOptionsConfirmBtn.disabled = state.isLoading || !importOptionsModalState.pendingFile;
   el.exportSelectedSearchBtn.disabled = state.isLoading || !state.selectedRows.search.size;
   el.moveSelectedBtn.disabled = state.isLoading || !state.selectedRows.search.size;
   el.selectAllSearchBtn.disabled = state.isLoading || !state.searchRows.length;
@@ -542,6 +572,234 @@ function syncButtons() {
   el.deleteActiveTabBtn.disabled = state.isLoading || !activeTab;
   el.selectAllTabBtn.disabled = state.isLoading || !activeTab || !activeTab.rows.length;
   el.unselectAllTabBtn.disabled = state.isLoading || !activeTab || !activeSelection;
+}
+
+function onImportButtonClick() {
+  if (state.isLoading) {
+    return;
+  }
+
+  el.importFileInput.click();
+}
+
+function openImportOptionsModal(file) {
+  importOptionsModalState.pendingFile = file;
+  importOptionsModalState.isOpen = true;
+  el.importOptionsFileName.textContent = `File: ${file.name}`;
+  el.importOptionsModal.classList.add("open");
+  el.importOptionsModal.setAttribute("aria-hidden", "false");
+  syncButtons();
+}
+
+function closeImportOptionsModal() {
+  if (!importOptionsModalState.isOpen) {
+    return;
+  }
+
+  importOptionsModalState.isOpen = false;
+  importOptionsModalState.pendingFile = null;
+  el.importOptionsModal.classList.remove("open");
+  el.importOptionsModal.setAttribute("aria-hidden", "true");
+  el.importFileInput.value = "";
+  syncButtons();
+}
+
+function findHeaderKey(headers, aliases) {
+  const normalizedAliases = new Set(aliases.map(normalizeHeader));
+  return headers.find((header) => normalizedAliases.has(normalizeHeader(header))) ?? null;
+}
+
+function parseImportRows(rawRows) {
+  const headers = rawRows.length ? Object.keys(rawRows[0]) : [];
+
+  const nameKey = findHeaderKey(headers, [
+    "card name",
+    "name",
+    "pokemon",
+    "pokemon name",
+  ]);
+  const numberKey = findHeaderKey(headers, [
+    "card number",
+    "number",
+    "card #",
+    "card no",
+    "card_no",
+    "cardnumber",
+    "local id",
+    "localid",
+    "collector number",
+  ]);
+  const setNameKey = findHeaderKey(headers, ["set", "set name"]);
+  const setCodeKey = findHeaderKey(headers, ["set code", "set id"]);
+
+  if (!nameKey) {
+    throw new Error("Import file must include a card name column.");
+  }
+
+  const parsedRows = rawRows
+    .map((row) => ({
+      cardName: String(row[nameKey] ?? "").trim(),
+      cardNumber: numberKey ? String(row[numberKey] ?? "").trim() : "",
+      setName: setNameKey ? String(row[setNameKey] ?? "").trim() : "",
+      setCode: setCodeKey ? String(row[setCodeKey] ?? "").trim() : "",
+    }))
+    .filter((row) => row.cardName);
+
+  const dedupedMap = new Map();
+  parsedRows.forEach((row) => {
+    const key = [normalize(row.cardName), normalize(row.cardNumber), normalize(row.setName), normalize(row.setCode)].join("|");
+    if (!dedupedMap.has(key)) {
+      dedupedMap.set(key, row);
+    }
+  });
+
+  return Array.from(dedupedMap.values());
+}
+
+function pickSingleBestCard(cards, cardName) {
+  if (!cards.length) {
+    return [];
+  }
+
+  const normalizedName = normalize(cardName);
+  const exact = cards.find((card) => normalize(card?.name) === normalizedName);
+  return [exact ?? cards[0]];
+}
+
+async function fetchImportedCards(importRows, maxCards, includeMultipleWhenNoNumber) {
+  const matchedCards = [];
+
+  for (let index = 0; index < importRows.length; index += 1) {
+    const importRow = importRows[index];
+    el.loadingText.textContent = `Import search ${index + 1}/${importRows.length}...`;
+
+    const params = new URLSearchParams();
+    if (importRow.cardName) {
+      params.set("name", importRow.cardName);
+    }
+    if (importRow.setCode) {
+      params.set("set", importRow.setCode);
+    } else if (importRow.setName) {
+      params.set("set", importRow.setName);
+    } else if (importRow.cardNumber) {
+      params.set("localId", importRow.cardNumber);
+    }
+
+    if (!params.toString()) {
+      continue;
+    }
+
+    const summaries = await fetchJson(`${API_BASE}?${params.toString()}`);
+    if (!Array.isArray(summaries) || !summaries.length) {
+      continue;
+    }
+
+    const cardIds = summaries.slice(0, maxCards).map((item) => item.id).filter(Boolean);
+    if (!cardIds.length) {
+      continue;
+    }
+
+    const cards = await fetchCardDetails(cardIds);
+    let filteredCards = filterCards(cards, {
+      cardName: normalize(importRow.cardName),
+      setName: normalize(importRow.setName),
+      cardNumber: normalize(importRow.cardNumber),
+      setCode: normalize(importRow.setCode),
+    });
+
+    if (!importRow.cardNumber && !includeMultipleWhenNoNumber) {
+      filteredCards = pickSingleBestCard(filteredCards, importRow.cardName);
+    }
+
+    matchedCards.push(...filteredCards);
+  }
+
+  return matchedCards;
+}
+
+async function onImportFileSelected(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  openImportOptionsModal(file);
+}
+
+async function submitImportOptionsModal(event) {
+  event.preventDefault();
+
+  const file = importOptionsModalState.pendingFile;
+  if (!file) {
+    return;
+  }
+
+  let maxCards;
+  try {
+    maxCards = parseMaxCards(el.maxCards.value);
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+
+  const includeMultipleWhenNoNumber = Boolean(el.importAllowMultipleNoNumber.checked);
+  closeImportOptionsModal();
+  await importSearchFile(file, maxCards, includeMultipleWhenNoNumber);
+}
+
+async function importSearchFile(file, maxCards, includeMultipleWhenNoNumber) {
+
+  setActiveTab("search");
+  setLoading(true, "Importing file...");
+  setStatus(`Reading ${file.name}...`);
+
+  try {
+    const fileBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(fileBuffer, { type: "array" });
+    const firstSheetName = workbook.SheetNames[0];
+
+    if (!firstSheetName) {
+      throw new Error("No sheet found in the imported file.");
+    }
+
+    const worksheet = workbook.Sheets[firstSheetName];
+    const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+    if (!Array.isArray(rawRows) || !rawRows.length) {
+      throw new Error("The imported file is empty.");
+    }
+
+    const importRows = parseImportRows(rawRows);
+    if (!importRows.length) {
+      throw new Error("No rows with a card name were found in the file.");
+    }
+
+    setStatus(`Running ${importRows.length} imported search row${importRows.length === 1 ? "" : "s"}...`);
+    const importedCards = await fetchImportedCards(importRows, maxCards, includeMultipleWhenNoNumber);
+
+    const importedRows = flattenMarketRows(importedCards, state.allowedSourceIds);
+    const dedupedRows = Array.from(new Map(importedRows.map((row) => [row.id, row])).values());
+
+    if (state.keepSelectedOnSearch) {
+      state.searchRows = mergeSearchRowsKeepingSelectedFirst(dedupedRows);
+    } else {
+      state.searchRows = dedupedRows;
+      clearSelection("search");
+    }
+
+    renderSearchTable();
+
+    if (!state.searchRows.length) {
+      setStatus("Import finished but no market rows matched the imported data.");
+    } else {
+      setStatus(`Import complete: ${state.searchRows.length} market row${state.searchRows.length === 1 ? "" : "s"} loaded.`);
+    }
+  } catch (err) {
+    setStatus("Import failed.");
+    alert(`Import error: ${err.message}`);
+  } finally {
+    setLoading(false);
+    el.importFileInput.value = "";
+  }
 }
 
 function persistTabs() {
@@ -2349,4 +2607,8 @@ if (el.tabModal) {
 
 if (el.moveModal) {
   el.moveModal.setAttribute("aria-hidden", "true");
+}
+
+if (el.importOptionsModal) {
+  el.importOptionsModal.setAttribute("aria-hidden", "true");
 }

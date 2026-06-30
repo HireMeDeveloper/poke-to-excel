@@ -730,6 +730,18 @@ tfoot td {
   background: #fff;
 }
 
+.import-option-inline {
+  display: inline-flex !important;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-option-inline input {
+  width: auto;
+  margin: 0;
+}
+
 .color-picker-block > span {
   font-size: 0.84rem;
   color: var(--muted);

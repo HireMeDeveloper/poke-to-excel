@@ -6,6 +6,8 @@ Static web app (HTML/CSS/JavaScript) that fetches Pokemon TCG market pricing fro
 
 - No API key required
 - Search by card name, set name, card number, and set code
+- Import a CSV or Excel file to run batch searches by card name/card number
+- Optional import behavior: include multiple matches when an imported row has no card number
 - Loading indicator during API fetch
 - Row selection checkboxes on the left
 - Search tab plus dynamically created color-coded tabs
@@ -43,6 +45,14 @@ http://localhost:8000
 6. Select one or more search rows with the left checkboxes.
 7. Click **Move Selected** and choose the destination tab.
 8. Open a tab to remove selected rows, clear the tab, refresh prices, or export all rows.
+
+### Importing a file
+
+1. In Search, click **Import CSV or Excel**.
+2. Choose a `.csv`, `.xls`, or `.xlsx` file.
+3. Include a card name column (for example: `card name` or `name`).
+4. Optional: include card number (for example: `card number`, `number`, or `local id`).
+5. Optional: enable **Include multiple matches when card number is missing** if you want all matching cards for name-only rows.
 
 ## Deployment
 
