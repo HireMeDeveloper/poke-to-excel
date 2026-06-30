@@ -1,5 +1,12 @@
 const API_BASE = "https://api.tcgdex.net/v2/en/cards";
 const STORAGE_KEY = "pokeprices.tabs.v2";
+const THEME_PREFERENCES = new Set(["system", "light", "dark"]);
+const NUMERIC_SORT_COLUMN_IDS = new Set(["market_price", "low_price", "mid_price", "high_price", "avg_price", "trend_price"]);
+const DEFAULT_TAB_GRID_STATE = {
+  filterText: "",
+  sortColumnId: "",
+  sortDirection: "asc",
+};
 
 const TAB_COLORS = [
   { bg: "#dff4e7", border: "#8bcaa5", text: "#1f5338" },
@@ -31,10 +38,13 @@ const DATA_COLUMNS = [
   { id: "updated", label: "updated" },
 ];
 
+let DEFAULT_COLUMN_ORDER_IDS = DATA_COLUMNS.map((column) => column.id);
+
 const SPECIAL_COLUMNS = [
   { id: "select", label: "select" },
   { id: "add", label: "add" },
   { id: "move", label: "move" },
+  { id: "copy", label: "copy" },
   { id: "remove", label: "remove" },
   { id: "index", label: "#" },
 ];
@@ -53,17 +63,115 @@ const DEFAULT_ALLOWED_SOURCE_IDS = SOURCE_OPTIONS.map((source) => source.id);
 const DEFAULT_KEEP_SELECTED_ON_SEARCH = true;
 const DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH = false;
 const DEFAULT_SORT_SETTINGS_BY_SELECTED = false;
+const DEFAULT_SEARCH_GRID_STATE = { ...DEFAULT_TAB_GRID_STATE };
 
-function createId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
+function normalizeColumnOrderIds(columnOrderIds) {
+  const inputIds = Array.isArray(columnOrderIds)
+    ? columnOrderIds.filter((columnId) => DATA_COLUMNS.some((column) => column.id === columnId))
+    : [];
+  const merged = [];
+
+  inputIds.forEach((columnId) => {
+    if (!merged.includes(columnId)) {
+      merged.push(columnId);
+    }
+  });
+
+  DEFAULT_COLUMN_ORDER_IDS.forEach((columnId) => {
+    if (!merged.includes(columnId)) {
+      merged.push(columnId);
+    }
+  });
+
+  return merged;
+}
+
+function normalizeColumnWidths(columnWidths) {
+  const normalized = {};
+
+  if (!columnWidths || typeof columnWidths !== "object") {
+    return normalized;
   }
 
-  return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  Object.entries(columnWidths).forEach(([columnId, widthValue]) => {
+    if (!DATA_COLUMNS.some((column) => column.id === columnId)) {
+      return;
+    }
+
+    const width = Number.parseInt(widthValue, 10);
+    if (Number.isFinite(width) && width >= 80 && width <= 600) {
+      normalized[columnId] = width;
+    }
+  });
+
+  return normalized;
+}
+
+function normalizeIdSelection(rawIds, allIds, fallbackIds) {
+  const selected = Array.isArray(rawIds)
+    ? rawIds.filter((id) => allIds.includes(id))
+    : [];
+
+  if (!selected.length) {
+    return [...fallbackIds];
+  }
+
+  const unique = [];
+  selected.forEach((id) => {
+    if (!unique.includes(id)) {
+      unique.push(id);
+    }
+  });
+  return unique;
+}
+
+function normalizeColumnVisibility(rawVisibility, fallbackVisibility) {
+  const dataIds = DATA_COLUMNS.map((column) => column.id);
+  const specialIds = SPECIAL_COLUMNS.map((column) => column.id);
+  const visibleColumnIds = normalizeIdSelection(
+    rawVisibility?.visibleColumnIds,
+    dataIds,
+    fallbackVisibility.visibleColumnIds
+  );
+  const visibleSpecialColumnIds = normalizeIdSelection(
+    rawVisibility?.visibleSpecialColumnIds,
+    specialIds,
+    fallbackVisibility.visibleSpecialColumnIds
+  );
+
+  if (!visibleColumnIds.length && !visibleSpecialColumnIds.length) {
+    return {
+      visibleColumnIds: [...fallbackVisibility.visibleColumnIds],
+      visibleSpecialColumnIds: [...fallbackVisibility.visibleSpecialColumnIds],
+    };
+  }
+
+  return {
+    visibleColumnIds,
+    visibleSpecialColumnIds,
+  };
+}
+
+function toRuntimeColumnVisibility(visibility) {
+  return {
+    visibleColumnIds: new Set(visibility.visibleColumnIds),
+    visibleSpecialColumnIds: new Set(visibility.visibleSpecialColumnIds),
+  };
+}
+
+function toPersistedColumnVisibility(visibility) {
+  return {
+    visibleColumnIds: Array.from(visibility.visibleColumnIds),
+    visibleSpecialColumnIds: Array.from(visibility.visibleSpecialColumnIds),
+  };
 }
 
 function normalize(value) {
   return String(value ?? "").toLowerCase();
+}
+
+function toNumberOrBlank(value) {
+  return typeof value === "number" ? value : "";
 }
 
 function normalizeHeader(value) {
@@ -71,10 +179,6 @@ function normalizeHeader(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
-}
-
-function toNumberOrBlank(value) {
-  return typeof value === "number" ? value : "";
 }
 
 function buildCardNumber(card) {
@@ -115,7 +219,7 @@ function normalizeRow(row) {
   return normalized;
 }
 
-function normalizeTab(tab) {
+function normalizeTab(tab, fallbackVisibility) {
   if (!tab || typeof tab !== "object") {
     return null;
   }
@@ -129,6 +233,23 @@ function normalizeTab(tab) {
     name: typeof tab.name === "string" && tab.name.trim() ? tab.name.trim() : "New Tab",
     colorIndex,
     rows,
+    columnVisibility: normalizeColumnVisibility(tab?.columnVisibility, fallbackVisibility),
+  };
+}
+
+function normalizeThemePreference(value) {
+  return THEME_PREFERENCES.has(value) ? value : "system";
+}
+
+function normalizeTabGridState(tabGridState) {
+  const filterText = typeof tabGridState?.filterText === "string" ? tabGridState.filterText : "";
+  const sortColumnId = typeof tabGridState?.sortColumnId === "string" ? tabGridState.sortColumnId : "";
+  const sortDirection = tabGridState?.sortDirection === "desc" ? "desc" : "asc";
+
+  return {
+    filterText,
+    sortColumnId,
+    sortDirection,
   };
 }
 
@@ -136,39 +257,59 @@ function loadPersistedState() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
+      const defaultColumnVisibility = {
+        visibleColumnIds: [...DEFAULT_VISIBLE_COLUMN_IDS],
+        visibleSpecialColumnIds: [...DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS],
+      };
       return {
         tabs: [],
         activeTabId: "search",
-        visibleColumnIds: DEFAULT_VISIBLE_COLUMN_IDS,
-        visibleSpecialColumnIds: DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS,
+        defaultColumnVisibility,
+        searchColumnVisibility: { ...defaultColumnVisibility },
         exportColumnIds: DEFAULT_EXPORT_COLUMN_IDS,
         allowedSourceIds: DEFAULT_ALLOWED_SOURCE_IDS,
         keepSelectedOnSearch: DEFAULT_KEEP_SELECTED_ON_SEARCH,
         clearSearchInputsOnSearch: DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH,
         sortSettingsBySelected: DEFAULT_SORT_SETTINGS_BY_SELECTED,
+        themePreference: "system",
+        searchGridState: { ...DEFAULT_SEARCH_GRID_STATE },
+        tabGridStates: {},
+        columnOrderIds: DEFAULT_COLUMN_ORDER_IDS,
+        columnWidths: {},
       };
     }
 
     const parsed = JSON.parse(raw);
+    const defaultColumnVisibility = normalizeColumnVisibility(
+      {
+        visibleColumnIds: parsed?.settings?.defaultVisibleColumnIds ?? parsed?.settings?.visibleColumnIds,
+        visibleSpecialColumnIds: parsed?.settings?.defaultVisibleSpecialColumnIds ?? parsed?.settings?.visibleSpecialColumnIds,
+      },
+      {
+        visibleColumnIds: DEFAULT_VISIBLE_COLUMN_IDS,
+        visibleSpecialColumnIds: DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS,
+      }
+    );
+
+    const searchColumnVisibility = normalizeColumnVisibility(
+      {
+        visibleColumnIds: parsed?.settings?.searchVisibleColumnIds ?? parsed?.settings?.visibleColumnIds,
+        visibleSpecialColumnIds: parsed?.settings?.searchVisibleSpecialColumnIds ?? parsed?.settings?.visibleSpecialColumnIds,
+      },
+      defaultColumnVisibility
+    );
+
     const inputTabs = Array.isArray(parsed?.tabs) ? parsed.tabs : [];
     const tabs = [];
 
     for (const rawTab of inputTabs) {
-      const tab = normalizeTab(rawTab);
+      const tab = normalizeTab(rawTab, defaultColumnVisibility);
       if (!tab) {
         continue;
       }
 
       tabs.push(tab);
     }
-
-    const visibleColumnIds = Array.isArray(parsed?.settings?.visibleColumnIds)
-      ? parsed.settings.visibleColumnIds.filter((columnId) => DATA_COLUMNS.some((column) => column.id === columnId))
-      : DEFAULT_VISIBLE_COLUMN_IDS;
-
-    const visibleSpecialColumnIds = Array.isArray(parsed?.settings?.visibleSpecialColumnIds)
-      ? parsed.settings.visibleSpecialColumnIds.filter((columnId) => SPECIAL_COLUMNS.some((column) => column.id === columnId))
-      : DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS;
 
     const exportColumnIds = Array.isArray(parsed?.settings?.exportColumnIds)
       ? parsed.settings.exportColumnIds.filter((columnId) => DATA_COLUMNS.some((column) => column.id === columnId))
@@ -190,28 +331,58 @@ function loadPersistedState() {
       ? parsed.settings.sortSettingsBySelected
       : DEFAULT_SORT_SETTINGS_BY_SELECTED;
 
+    const searchGridState = normalizeTabGridState(parsed?.settings?.searchGridState);
+
+    const columnOrderIds = normalizeColumnOrderIds(parsed?.settings?.columnOrderIds);
+    const columnWidths = normalizeColumnWidths(parsed?.settings?.columnWidths);
+
+    const themePreference = normalizeThemePreference(parsed?.settings?.themePreference);
+
+    const rawTabGridStates = parsed?.settings?.tabGridStates && typeof parsed.settings.tabGridStates === "object"
+      ? parsed.settings.tabGridStates
+      : {};
+    const tabGridStates = {};
+
+    tabs.forEach((tab) => {
+      tabGridStates[tab.id] = normalizeTabGridState(rawTabGridStates[tab.id]);
+    });
+
     return {
       tabs,
       activeTabId: typeof parsed?.activeTabId === "string" ? parsed.activeTabId : "search",
-      visibleColumnIds: visibleColumnIds.length ? visibleColumnIds : DEFAULT_VISIBLE_COLUMN_IDS,
-      visibleSpecialColumnIds: visibleSpecialColumnIds.length ? visibleSpecialColumnIds : DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS,
+      defaultColumnVisibility,
+      searchColumnVisibility,
       exportColumnIds: exportColumnIds.length ? exportColumnIds : DEFAULT_EXPORT_COLUMN_IDS,
       allowedSourceIds: allowedSourceIds.length ? allowedSourceIds : DEFAULT_ALLOWED_SOURCE_IDS,
       keepSelectedOnSearch,
       clearSearchInputsOnSearch,
       sortSettingsBySelected,
+      themePreference,
+      searchGridState,
+      tabGridStates,
+      columnOrderIds,
+      columnWidths,
     };
   } catch {
+    const defaultColumnVisibility = {
+      visibleColumnIds: [...DEFAULT_VISIBLE_COLUMN_IDS],
+      visibleSpecialColumnIds: [...DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS],
+    };
     return {
       tabs: [],
       activeTabId: "search",
-      visibleColumnIds: DEFAULT_VISIBLE_COLUMN_IDS,
-      visibleSpecialColumnIds: DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS,
+      defaultColumnVisibility,
+      searchColumnVisibility: { ...defaultColumnVisibility },
       exportColumnIds: DEFAULT_EXPORT_COLUMN_IDS,
       allowedSourceIds: DEFAULT_ALLOWED_SOURCE_IDS,
       keepSelectedOnSearch: DEFAULT_KEEP_SELECTED_ON_SEARCH,
       clearSearchInputsOnSearch: DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH,
       sortSettingsBySelected: DEFAULT_SORT_SETTINGS_BY_SELECTED,
+      themePreference: "system",
+      searchGridState: { ...DEFAULT_SEARCH_GRID_STATE },
+      tabGridStates: {},
+      columnOrderIds: DEFAULT_COLUMN_ORDER_IDS,
+      columnWidths: {},
     };
   }
 }
@@ -222,19 +393,35 @@ const state = {
   searchRows: [],
   tabs: persistedState.tabs,
   activeTabId: persistedState.activeTabId,
-  visibleColumnIds: new Set(persistedState.visibleColumnIds),
-  visibleSpecialColumnIds: new Set(persistedState.visibleSpecialColumnIds),
+  defaultVisibleColumnIds: new Set(persistedState.defaultColumnVisibility.visibleColumnIds),
+  defaultVisibleSpecialColumnIds: new Set(persistedState.defaultColumnVisibility.visibleSpecialColumnIds),
+  searchVisibleColumnIds: new Set(persistedState.searchColumnVisibility.visibleColumnIds),
+  searchVisibleSpecialColumnIds: new Set(persistedState.searchColumnVisibility.visibleSpecialColumnIds),
   exportColumnIds: new Set(persistedState.exportColumnIds),
   allowedSourceIds: new Set(persistedState.allowedSourceIds),
   keepSelectedOnSearch: persistedState.keepSelectedOnSearch,
   clearSearchInputsOnSearch: persistedState.clearSearchInputsOnSearch,
   sortSettingsBySelected: persistedState.sortSettingsBySelected,
+  themePreference: persistedState.themePreference,
+  searchGridState: persistedState.searchGridState,
+  tabGridStates: persistedState.tabGridStates,
+  columnOrderIds: persistedState.columnOrderIds,
+  columnWidths: persistedState.columnWidths,
   selectedRows: {
     search: new Set(),
     tabs: {},
   },
   isLoading: false,
 };
+
+state.tabs.forEach((tab) => {
+  tab.columnVisibility = toRuntimeColumnVisibility(
+    normalizeColumnVisibility(tab.columnVisibility, {
+      visibleColumnIds: Array.from(state.defaultVisibleColumnIds),
+      visibleSpecialColumnIds: Array.from(state.defaultVisibleSpecialColumnIds),
+    })
+  );
+});
 
 const el = {
   cardName: document.getElementById("cardName"),
@@ -264,9 +451,11 @@ const el = {
   removeSelectedBtn: document.getElementById("removeSelectedBtn"),
   clearTabBtn: document.getElementById("clearTabBtn"),
   editActiveTabBtn: document.getElementById("editActiveTabBtn"),
+  duplicateActiveTabBtn: document.getElementById("duplicateActiveTabBtn"),
   deleteActiveTabBtn: document.getElementById("deleteActiveTabBtn"),
   selectAllTabBtn: document.getElementById("selectAllTabBtn"),
   unselectAllTabBtn: document.getElementById("unselectAllTabBtn"),
+  clearSearchSortBtn: document.getElementById("clearSearchSortBtn"),
   tabModal: document.getElementById("tabModal"),
   tabModalTitle: document.getElementById("tabModalTitle"),
   tabModalCloseBtn: document.getElementById("tabModalCloseBtn"),
@@ -305,6 +494,11 @@ const el = {
   clearDataModalCancelBtn: document.getElementById("clearDataModalCancelBtn"),
   clearDataModalForm: document.getElementById("clearDataModalForm"),
   clearDataModalConfirmBtn: document.getElementById("clearDataModalConfirmBtn"),
+  themeSystemBtn: document.getElementById("themeSystemBtn"),
+  themeLightBtn: document.getElementById("themeLightBtn"),
+  themeDarkBtn: document.getElementById("themeDarkBtn"),
+  tabFilterInput: document.getElementById("tabFilterInput"),
+  clearTabFilterBtn: document.getElementById("clearTabFilterBtn"),
   resetSettingsModal: document.getElementById("resetSettingsModal"),
   resetSettingsModalCloseBtn: document.getElementById("resetSettingsModalCloseBtn"),
   resetSettingsModalCancelBtn: document.getElementById("resetSettingsModalCancelBtn"),
@@ -312,6 +506,12 @@ const el = {
   resetSettingsModalConfirmBtn: document.getElementById("resetSettingsModalConfirmBtn"),
   statusText: document.getElementById("statusText"),
   searchCountText: document.getElementById("searchCountText"),
+  searchFunctionalColumnList: document.getElementById("searchFunctionalColumnList"),
+  searchDisplayColumnList: document.getElementById("searchDisplayColumnList"),
+  searchColumnsSelectAllBtn: document.getElementById("searchColumnsSelectAllBtn"),
+  searchColumnsResetBtn: document.getElementById("searchColumnsResetBtn"),
+  searchFilterInput: document.getElementById("searchFilterInput"),
+  clearSearchFilterBtn: document.getElementById("clearSearchFilterBtn"),
   loadingWrap: document.getElementById("loadingWrap"),
   loadingText: document.getElementById("loadingText"),
   tabSearch: document.getElementById("tabSearch"),
@@ -325,11 +525,16 @@ const el = {
   settingsPanel: document.getElementById("settingsPanel"),
   activeTabTitle: document.getElementById("activeTabTitle"),
   activeTabMeta: document.getElementById("activeTabMeta"),
+  clearTabSortBtn: document.getElementById("clearTabSortBtn"),
   resultsHead: document.getElementById("resultsHead"),
   resultsBody: document.getElementById("resultsBody"),
   tabHead: document.getElementById("tabHead"),
   tabBody: document.getElementById("tabBody"),
   tabFoot: document.getElementById("tabFoot"),
+  tabFunctionalColumnList: document.getElementById("tabFunctionalColumnList"),
+  tabDisplayColumnList: document.getElementById("tabDisplayColumnList"),
+  tabColumnsSelectAllBtn: document.getElementById("tabColumnsSelectAllBtn"),
+  tabColumnsResetBtn: document.getElementById("tabColumnsResetBtn"),
   settingsFunctionalColumnList: document.getElementById("settingsFunctionalColumnList"),
   settingsDisplayColumnList: document.getElementById("settingsDisplayColumnList"),
   settingsExportColumnList: document.getElementById("settingsExportColumnList"),
@@ -357,6 +562,9 @@ el.exportSelectedSearchBtn.addEventListener("click", exportSelectedSearchRows);
 el.moveSelectedBtn.addEventListener("click", moveSelectedSearchRows);
 el.selectAllSearchBtn.addEventListener("click", selectAllSearchRows);
 el.unselectAllSearchBtn.addEventListener("click", unselectAllSearchRows);
+el.clearSearchSortBtn.addEventListener("click", () => clearGridSort("search"));
+el.searchColumnsSelectAllBtn.addEventListener("click", () => selectAllColumnsForScope("search"));
+el.searchColumnsResetBtn.addEventListener("click", () => resetColumnsForScope("search"));
 el.importOptionsModalCloseBtn.addEventListener("click", closeImportOptionsModal);
 el.importOptionsCancelBtn.addEventListener("click", closeImportOptionsModal);
 el.importOptionsModalForm.addEventListener("submit", submitImportOptionsModal);
@@ -373,9 +581,28 @@ el.moveSelectedTabBtn.addEventListener("click", moveSelectedActiveTabRows);
 el.removeSelectedBtn.addEventListener("click", removeSelectedRowsFromActiveTab);
 el.clearTabBtn.addEventListener("click", clearActiveTab);
 el.editActiveTabBtn.addEventListener("click", openEditActiveTabModal);
+el.duplicateActiveTabBtn.addEventListener("click", duplicateActiveTab);
 el.deleteActiveTabBtn.addEventListener("click", openDeleteActiveTabModal);
 el.selectAllTabBtn.addEventListener("click", selectAllActiveTabRows);
 el.unselectAllTabBtn.addEventListener("click", unselectAllActiveTabRows);
+el.clearTabSortBtn.addEventListener("click", () => {
+  const activeTab = getActiveTab();
+  if (activeTab) {
+    clearGridSort(activeTab.id);
+  }
+});
+el.tabColumnsSelectAllBtn.addEventListener("click", () => {
+  const activeTab = getActiveTab();
+  if (activeTab) {
+    selectAllColumnsForScope(activeTab.id);
+  }
+});
+el.tabColumnsResetBtn.addEventListener("click", () => {
+  const activeTab = getActiveTab();
+  if (activeTab) {
+    resetColumnsForScope(activeTab.id);
+  }
+});
 el.tabModalCloseBtn.addEventListener("click", closeTabModal);
 el.tabModalCancelBtn.addEventListener("click", closeTabModal);
 el.tabModalForm.addEventListener("submit", submitTabModal);
@@ -418,6 +645,13 @@ el.deleteModal.addEventListener("click", (event) => {
 el.tabSearch.addEventListener("click", () => setActiveTab("search"));
 el.tabHelp.addEventListener("click", () => setActiveTab("help"));
 el.tabSettings.addEventListener("click", () => setActiveTab("settings"));
+el.themeSystemBtn.addEventListener("click", () => setThemePreference("system"));
+el.themeLightBtn.addEventListener("click", () => setThemePreference("light"));
+el.themeDarkBtn.addEventListener("click", () => setThemePreference("dark"));
+el.searchFilterInput.addEventListener("input", onSearchFilterInput);
+el.clearSearchFilterBtn.addEventListener("click", clearSearchFilterInput);
+el.tabFilterInput.addEventListener("input", onTabFilterInput);
+el.clearTabFilterBtn.addEventListener("click", clearTabFilterInput);
 el.functionalSelectAllBtn.addEventListener("click", selectAllFunctionalColumns);
 el.functionalResetBtn.addEventListener("click", resetFunctionalColumns);
 el.displaySelectAllBtn.addEventListener("click", selectAllDisplayColumns);
@@ -569,6 +803,7 @@ function syncButtons() {
   el.removeSelectedBtn.disabled = state.isLoading || !activeTab || !activeSelection;
   el.clearTabBtn.disabled = state.isLoading || !activeTab || !activeTab.rows.length;
   el.addTabBtn.disabled = state.isLoading;
+  el.duplicateActiveTabBtn.disabled = state.isLoading || !activeTab;
   el.deleteActiveTabBtn.disabled = state.isLoading || !activeTab;
   el.selectAllTabBtn.disabled = state.isLoading || !activeTab || !activeTab.rows.length;
   el.unselectAllTabBtn.disabled = state.isLoading || !activeTab || !activeSelection;
@@ -804,19 +1039,31 @@ async function importSearchFile(file, maxCards, includeMultipleWhenNoNumber) {
 
 function persistTabs() {
   try {
+    const serializedTabs = state.tabs.map((tab) => ({
+      ...tab,
+      columnVisibility: toPersistedColumnVisibility(getColumnVisibilityForScope(tab.id)),
+    }));
+
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        tabs: state.tabs,
+        tabs: serializedTabs,
         activeTabId: state.activeTabId,
         settings: {
-          visibleColumnIds: Array.from(state.visibleColumnIds),
-          visibleSpecialColumnIds: Array.from(state.visibleSpecialColumnIds),
+          defaultVisibleColumnIds: Array.from(state.defaultVisibleColumnIds),
+          defaultVisibleSpecialColumnIds: Array.from(state.defaultVisibleSpecialColumnIds),
+          searchVisibleColumnIds: Array.from(state.searchVisibleColumnIds),
+          searchVisibleSpecialColumnIds: Array.from(state.searchVisibleSpecialColumnIds),
           exportColumnIds: Array.from(state.exportColumnIds),
           allowedSourceIds: Array.from(state.allowedSourceIds),
           keepSelectedOnSearch: state.keepSelectedOnSearch,
           clearSearchInputsOnSearch: state.clearSearchInputsOnSearch,
           sortSettingsBySelected: state.sortSettingsBySelected,
+          themePreference: state.themePreference,
+          searchGridState: state.searchGridState,
+          tabGridStates: state.tabGridStates,
+          columnOrderIds: Array.isArray(state.columnOrderIds) ? state.columnOrderIds : DEFAULT_COLUMN_ORDER_IDS,
+          columnWidths: state.columnWidths,
         },
       })
     );
@@ -848,8 +1095,313 @@ function getTabById(tabId) {
   return state.tabs.find((tab) => tab.id === tabId) ?? null;
 }
 
-function getVisibleDataColumns() {
-  return DATA_COLUMNS.filter((column) => state.visibleColumnIds.has(column.id));
+function getOrderedDataColumns() {
+  const orderedIds = Array.isArray(state.columnOrderIds) ? state.columnOrderIds : DEFAULT_COLUMN_ORDER_IDS;
+  return orderedIds.map((columnId) => DATA_COLUMNS.find((column) => column.id === columnId)).filter(Boolean);
+}
+
+function createDefaultScopeColumnVisibility() {
+  return {
+    visibleColumnIds: new Set(state.defaultVisibleColumnIds),
+    visibleSpecialColumnIds: new Set(state.defaultVisibleSpecialColumnIds),
+  };
+}
+
+function getColumnVisibilityForScope(scope) {
+  if (scope === "search") {
+    return {
+      visibleColumnIds: state.searchVisibleColumnIds,
+      visibleSpecialColumnIds: state.searchVisibleSpecialColumnIds,
+    };
+  }
+
+  const tab = getTabById(scope);
+  if (!tab) {
+    return createDefaultScopeColumnVisibility();
+  }
+
+  if (!tab.columnVisibility) {
+    tab.columnVisibility = createDefaultScopeColumnVisibility();
+  }
+
+  return tab.columnVisibility;
+}
+
+function getAllowedSpecialColumnIdsForScope(scope) {
+  if (scope === "search") {
+    return ["select", "add", "copy", "index"];
+  }
+
+  if (getTabById(scope)) {
+    return ["select", "remove", "move", "copy", "index"];
+  }
+
+  return SPECIAL_COLUMNS.map((column) => column.id);
+}
+
+function getVisibleDataColumns(scope) {
+  const visibility = getColumnVisibilityForScope(scope);
+  return getOrderedDataColumns().filter((column) => visibility.visibleColumnIds.has(column.id));
+}
+
+function getColumnWidth(columnId) {
+  const width = state.columnWidths[columnId];
+  return Number.isFinite(width) ? width : null;
+}
+
+function setColumnWidth(columnId, width) {
+  const nextWidth = Math.max(80, Math.min(600, Math.round(width)));
+  state.columnWidths[columnId] = nextWidth;
+  persistTabs();
+  renderPanels();
+}
+
+function moveColumn(columnId, targetColumnId) {
+  if (columnId === targetColumnId) {
+    return;
+  }
+
+  const nextOrder = Array.isArray(state.columnOrderIds) ? [...state.columnOrderIds] : [...DEFAULT_COLUMN_ORDER_IDS];
+  const fromIndex = nextOrder.indexOf(columnId);
+  const toIndex = nextOrder.indexOf(targetColumnId);
+  if (fromIndex < 0 || toIndex < 0) {
+    return;
+  }
+
+  const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
+  nextOrder.splice(fromIndex, 1);
+  nextOrder.splice(adjustedToIndex, 0, columnId);
+  state.columnOrderIds = nextOrder;
+  persistTabs();
+  renderPanels();
+}
+
+function getTabGridState(tabId) {
+  if (!state.tabGridStates[tabId]) {
+    state.tabGridStates[tabId] = { ...DEFAULT_TAB_GRID_STATE };
+  }
+
+  return state.tabGridStates[tabId];
+}
+
+function getGridState(scope) {
+  if (scope === "search") {
+    return state.searchGridState;
+  }
+
+  return getTabGridState(scope);
+}
+
+function getGridRows(scope) {
+  if (scope === "search") {
+    return state.searchRows;
+  }
+
+  const tab = getTabById(scope);
+  return tab?.rows ?? [];
+}
+
+function setGridFilterText(scope, filterText) {
+  const gridState = getGridState(scope);
+  gridState.filterText = filterText;
+}
+
+function clearGridFilterText(scope) {
+  setGridFilterText(scope, "");
+}
+
+function getFilteredGridRows(scope, rows = getGridRows(scope)) {
+  const gridState = getGridState(scope);
+  const filterText = normalize(gridState.filterText);
+
+  const filteredRows = !filterText
+    ? [...rows]
+    : rows.filter((row) => Object.values(row).some((value) => normalize(value).includes(filterText)));
+
+  if (!gridState.sortColumnId) {
+    return filteredRows;
+  }
+
+  const sortMultiplier = gridState.sortDirection === "desc" ? -1 : 1;
+  return filteredRows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const leftValue = left.row[gridState.sortColumnId] ?? "";
+      const rightValue = right.row[gridState.sortColumnId] ?? "";
+
+      let comparison = 0;
+      if (NUMERIC_SORT_COLUMN_IDS.has(gridState.sortColumnId)) {
+        const leftNumber = Number.parseFloat(leftValue);
+        const rightNumber = Number.parseFloat(rightValue);
+        const leftIsNumber = Number.isFinite(leftNumber);
+        const rightIsNumber = Number.isFinite(rightNumber);
+
+        if (leftIsNumber && rightIsNumber) {
+          comparison = leftNumber - rightNumber;
+        } else if (leftIsNumber !== rightIsNumber) {
+          comparison = leftIsNumber ? -1 : 1;
+        } else {
+          comparison = String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: "base" });
+        }
+      } else {
+        comparison = String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: "base" });
+      }
+
+      if (comparison !== 0) {
+        return comparison * sortMultiplier;
+      }
+
+      return left.index - right.index;
+    })
+    .map((entry) => entry.row);
+}
+
+function toggleGridSort(scope, columnId) {
+  const gridState = getGridState(scope);
+  if (gridState.sortColumnId !== columnId) {
+    gridState.sortColumnId = columnId;
+    gridState.sortDirection = "asc";
+  } else if (gridState.sortDirection === "asc") {
+    gridState.sortDirection = "desc";
+  } else {
+    gridState.sortColumnId = "";
+    gridState.sortDirection = "asc";
+  }
+
+  persistTabs();
+
+  const activeTab = getActiveTab();
+  if (scope === "search" || (activeTab && activeTab.id === scope)) {
+    renderPanels();
+  }
+}
+
+function clearGridSort(scope) {
+  const gridState = getGridState(scope);
+  if (!gridState.sortColumnId) {
+    return;
+  }
+
+  gridState.sortColumnId = "";
+  gridState.sortDirection = "asc";
+  persistTabs();
+
+  const activeTab = getActiveTab();
+  if (scope === "search" || (activeTab && activeTab.id === scope)) {
+    renderPanels();
+  }
+}
+
+function getResolvedTheme() {
+  if (state.themePreference === "system") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  return state.themePreference;
+}
+
+function updateThemeButtons() {
+  const isSystem = state.themePreference === "system";
+  const isLight = state.themePreference === "light";
+  const isDark = state.themePreference === "dark";
+
+  el.themeSystemBtn.classList.toggle("active", isSystem);
+  el.themeLightBtn.classList.toggle("active", isLight);
+  el.themeDarkBtn.classList.toggle("active", isDark);
+
+  el.themeSystemBtn.setAttribute("aria-pressed", String(isSystem));
+  el.themeLightBtn.setAttribute("aria-pressed", String(isLight));
+  el.themeDarkBtn.setAttribute("aria-pressed", String(isDark));
+}
+
+function applyThemePreference() {
+  document.documentElement.dataset.theme = getResolvedTheme();
+  updateThemeButtons();
+}
+
+function setThemePreference(preference) {
+  state.themePreference = normalizeThemePreference(preference);
+  persistTabs();
+  applyThemePreference();
+}
+
+function onSearchFilterInput() {
+  setGridFilterText("search", el.searchFilterInput.value);
+  persistTabs();
+  renderSearchTable();
+}
+
+function clearSearchFilterInput() {
+  const gridState = getGridState("search");
+  if (!gridState.filterText) {
+    return;
+  }
+
+  clearGridFilterText("search");
+  el.searchFilterInput.value = "";
+  persistTabs();
+  renderSearchTable();
+}
+
+function onTabFilterInput() {
+  const activeTab = getActiveTab();
+  if (!activeTab) {
+    return;
+  }
+
+  setGridFilterText(activeTab.id, el.tabFilterInput.value);
+  persistTabs();
+  renderTabTable(activeTab);
+}
+
+function clearTabFilterInput() {
+  const activeTab = getActiveTab();
+  if (!activeTab) {
+    return;
+  }
+
+  const tabGridState = getGridState(activeTab.id);
+  if (!tabGridState.filterText) {
+    return;
+  }
+
+  clearGridFilterText(activeTab.id);
+  el.tabFilterInput.value = "";
+  persistTabs();
+  renderTabTable(activeTab);
+}
+
+function serializeRowForClipboard(row) {
+  const columns = getOrderedDataColumns();
+  const headerLine = columns.map((column) => column.label).join("\t");
+  const valueLine = columns.map((column) => String(row[column.id] ?? "")).join("\t");
+  return `${headerLine}\n${valueLine}`;
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.setAttribute("readonly", "true");
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.select();
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textArea);
+
+  if (!copied) {
+    throw new Error("Clipboard copy failed.");
+  }
+}
+
+async function copyRowToClipboard(row) {
+  await copyTextToClipboard(serializeRowForClipboard(row));
+  setStatus(`Copied ${row.name || "row"} to the clipboard.`);
 }
 
 function isSourceAllowed(sourceId) {
@@ -874,7 +1426,7 @@ function sortSettingsItemsBySelected(items, selectedSet) {
 }
 
 function getSettingsColumnsInDisplayOrder() {
-  return sortSettingsItemsBySelected(DATA_COLUMNS, state.visibleColumnIds);
+  return sortSettingsItemsBySelected(DATA_COLUMNS, state.defaultVisibleColumnIds);
 }
 
 function getSettingsExportColumnsInDisplayOrder() {
@@ -882,21 +1434,28 @@ function getSettingsExportColumnsInDisplayOrder() {
 }
 
 function getSettingsSpecialColumnsInDisplayOrder() {
-  return sortSettingsItemsBySelected(SPECIAL_COLUMNS, state.visibleSpecialColumnIds);
+  return sortSettingsItemsBySelected(SPECIAL_COLUMNS, state.defaultVisibleSpecialColumnIds);
 }
 
-function isSpecialColumnVisible(columnId) {
-  return state.visibleSpecialColumnIds.has(columnId);
+function isSpecialColumnVisible(columnId, scope) {
+  return getColumnVisibilityForScope(scope).visibleSpecialColumnIds.has(columnId);
 }
 
-function getVisibleColumnSettingCount() {
-  return state.visibleColumnIds.size + state.visibleSpecialColumnIds.size;
+function getVisibleColumnSettingCount(scope) {
+  const visibility = getColumnVisibilityForScope(scope);
+  const allowedSpecialColumnIds = getAllowedSpecialColumnIdsForScope(scope);
+  const visibleAllowedSpecialCount = allowedSpecialColumnIds.filter((columnId) => visibility.visibleSpecialColumnIds.has(columnId)).length;
+  return visibility.visibleColumnIds.size + visibleAllowedSpecialCount;
 }
 
-function renderTableHead(headElement, actionLabels = []) {
+function renderTableHead(headElement, actionLabels = [], options = {}) {
   const row = document.createElement("tr");
+  const sortState = options.sortState ?? DEFAULT_TAB_GRID_STATE;
+  const onSort = typeof options.onSort === "function" ? options.onSort : null;
+  const sortableColumns = Boolean(options.sortableColumns);
+  const scope = options.scope ?? "search";
 
-  if (isSpecialColumnVisible("select")) {
+  if (isSpecialColumnVisible("select", scope)) {
     const selectHead = document.createElement("th");
     selectHead.className = "select-head";
     selectHead.textContent = "Select";
@@ -904,7 +1463,7 @@ function renderTableHead(headElement, actionLabels = []) {
   }
 
   actionLabels.forEach((actionLabel) => {
-    if (!isSpecialColumnVisible(actionLabel.id)) {
+    if (!isSpecialColumnVisible(actionLabel.id, scope)) {
       return;
     }
 
@@ -914,20 +1473,202 @@ function renderTableHead(headElement, actionLabels = []) {
     row.appendChild(actionHead);
   });
 
-  if (isSpecialColumnVisible("index")) {
+  if (isSpecialColumnVisible("index", scope)) {
     const indexHead = document.createElement("th");
     indexHead.className = "index-head";
     indexHead.textContent = "#";
     row.appendChild(indexHead);
   }
 
-  getVisibleDataColumns().forEach((column) => {
+  getVisibleDataColumns(scope).forEach((column) => {
     const th = document.createElement("th");
-    th.textContent = column.label;
+    const width = getColumnWidth(column.id);
+    if (width) {
+      th.style.width = `${width}px`;
+      th.style.minWidth = `${width}px`;
+    }
+    th.dataset.columnId = column.id;
+
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "column-label";
+    labelSpan.textContent = column.label;
+    th.appendChild(labelSpan);
+
+    if (sortableColumns) {
+      th.classList.add("sortable-head");
+      th.setAttribute("draggable", "true");
+      th.tabIndex = 0;
+      th.setAttribute("role", "button");
+      th.setAttribute("aria-label", `Sort by ${column.label}`);
+      if (sortState.columnId === column.id) {
+        th.classList.add("sorted-head");
+      }
+      th.addEventListener("click", () => onSort?.(column.id));
+      th.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSort?.(column.id);
+        }
+      });
+
+      th.addEventListener("dragstart", (event) => {
+        event.dataTransfer?.setData("text/plain", column.id);
+        event.dataTransfer?.setDragImage(th, 0, 0);
+      });
+
+      th.addEventListener("dragover", (event) => {
+        event.preventDefault();
+      });
+
+      th.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const sourceColumnId = event.dataTransfer?.getData("text/plain");
+        if (sourceColumnId && sourceColumnId !== column.id) {
+          moveColumn(sourceColumnId, column.id);
+        }
+      });
+
+      const resizeHandle = document.createElement("span");
+      resizeHandle.className = "column-resize-handle";
+      resizeHandle.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const startX = event.clientX;
+        const startWidth = th.getBoundingClientRect().width;
+
+        const onPointerMove = (moveEvent) => {
+          setColumnWidth(column.id, startWidth + (moveEvent.clientX - startX));
+        };
+
+        const onPointerUp = () => {
+          window.removeEventListener("pointermove", onPointerMove);
+          window.removeEventListener("pointerup", onPointerUp);
+        };
+
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+      });
+      th.appendChild(resizeHandle);
+    }
+
     row.appendChild(th);
   });
 
   headElement.replaceChildren(row);
+}
+
+function rerenderScopeAfterColumnChange(scope) {
+  persistTabs();
+  if (scope === "search") {
+    renderSearchTable();
+  } else {
+    const tab = getTabById(scope);
+    if (tab) {
+      renderTabTable(tab);
+    }
+  }
+}
+
+function renderScopeColumnChooser(scope, functionalContainer, displayContainer) {
+  const visibility = getColumnVisibilityForScope(scope);
+  const allowedSpecialColumnIds = new Set(getAllowedSpecialColumnIdsForScope(scope));
+  const functionalFragment = document.createDocumentFragment();
+  const displayFragment = document.createDocumentFragment();
+
+  SPECIAL_COLUMNS.filter((column) => allowedSpecialColumnIds.has(column.id)).forEach((column) => {
+    const label = document.createElement("label");
+    label.className = "setting-toggle";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = visibility.visibleSpecialColumnIds.has(column.id);
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        visibility.visibleSpecialColumnIds.add(column.id);
+      } else {
+        visibility.visibleSpecialColumnIds.delete(column.id);
+        if (!getVisibleColumnSettingCount(scope)) {
+          visibility.visibleSpecialColumnIds.add(column.id);
+          input.checked = true;
+          alert("At least one column must stay visible.");
+          return;
+        }
+      }
+
+      rerenderScopeAfterColumnChange(scope);
+    });
+
+    const text = document.createElement("span");
+    text.textContent = column.label;
+    label.appendChild(input);
+    label.appendChild(text);
+    functionalFragment.appendChild(label);
+  });
+
+  DATA_COLUMNS.forEach((column) => {
+    const label = document.createElement("label");
+    label.className = "setting-toggle";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = visibility.visibleColumnIds.has(column.id);
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        visibility.visibleColumnIds.add(column.id);
+      } else {
+        visibility.visibleColumnIds.delete(column.id);
+        if (!getVisibleColumnSettingCount(scope)) {
+          visibility.visibleColumnIds.add(column.id);
+          input.checked = true;
+          alert("At least one column must stay visible.");
+          return;
+        }
+      }
+
+      rerenderScopeAfterColumnChange(scope);
+    });
+
+    const text = document.createElement("span");
+    text.textContent = column.label;
+    label.appendChild(input);
+    label.appendChild(text);
+    displayFragment.appendChild(label);
+  });
+
+  functionalContainer.replaceChildren(functionalFragment);
+  displayContainer.replaceChildren(displayFragment);
+}
+
+function selectAllColumnsForScope(scope) {
+  const visibility = getColumnVisibilityForScope(scope);
+  const allowedSpecialColumnIds = getAllowedSpecialColumnIdsForScope(scope);
+  visibility.visibleColumnIds.clear();
+  DATA_COLUMNS.forEach((column) => visibility.visibleColumnIds.add(column.id));
+  visibility.visibleSpecialColumnIds.clear();
+  allowedSpecialColumnIds.forEach((columnId) => visibility.visibleSpecialColumnIds.add(columnId));
+  rerenderScopeAfterColumnChange(scope);
+}
+
+function resetColumnsForScope(scope) {
+  const visibility = getColumnVisibilityForScope(scope);
+  const allowedSpecialColumnIds = new Set(getAllowedSpecialColumnIdsForScope(scope));
+  visibility.visibleColumnIds.clear();
+  state.defaultVisibleColumnIds.forEach((columnId) => visibility.visibleColumnIds.add(columnId));
+  visibility.visibleSpecialColumnIds.clear();
+  state.defaultVisibleSpecialColumnIds.forEach((columnId) => {
+    if (allowedSpecialColumnIds.has(columnId)) {
+      visibility.visibleSpecialColumnIds.add(columnId);
+    }
+  });
+
+  if (!visibility.visibleColumnIds.size && !visibility.visibleSpecialColumnIds.size) {
+    const firstAllowedSpecial = getAllowedSpecialColumnIdsForScope(scope)[0];
+    if (firstAllowedSpecial) {
+      visibility.visibleSpecialColumnIds.add(firstAllowedSpecial);
+    }
+  }
+  rerenderScopeAfterColumnChange(scope);
 }
 
 function renderSettingsPanel() {
@@ -941,14 +1682,14 @@ function renderSettingsPanel() {
 
     const input = document.createElement("input");
     input.type = "checkbox";
-    input.checked = state.visibleSpecialColumnIds.has(column.id);
+    input.checked = state.defaultVisibleSpecialColumnIds.has(column.id);
     input.addEventListener("change", () => {
       if (input.checked) {
-        state.visibleSpecialColumnIds.add(column.id);
+        state.defaultVisibleSpecialColumnIds.add(column.id);
       } else {
-        state.visibleSpecialColumnIds.delete(column.id);
-        if (!getVisibleColumnSettingCount()) {
-          state.visibleSpecialColumnIds.add(column.id);
+        state.defaultVisibleSpecialColumnIds.delete(column.id);
+        if (!state.defaultVisibleColumnIds.size && !state.defaultVisibleSpecialColumnIds.size) {
+          state.defaultVisibleSpecialColumnIds.add(column.id);
           input.checked = true;
           alert("At least one column must stay visible.");
           return;
@@ -956,11 +1697,6 @@ function renderSettingsPanel() {
       }
 
       persistTabs();
-      renderSearchTable();
-      const activeTab = getActiveTab();
-      if (activeTab) {
-        renderTabTable(activeTab);
-      }
       renderSettingsPanel();
     });
 
@@ -978,14 +1714,14 @@ function renderSettingsPanel() {
 
     const input = document.createElement("input");
     input.type = "checkbox";
-    input.checked = state.visibleColumnIds.has(column.id);
+    input.checked = state.defaultVisibleColumnIds.has(column.id);
     input.addEventListener("change", () => {
       if (input.checked) {
-        state.visibleColumnIds.add(column.id);
+        state.defaultVisibleColumnIds.add(column.id);
       } else {
-        state.visibleColumnIds.delete(column.id);
-        if (!getVisibleColumnSettingCount()) {
-          state.visibleColumnIds.add(column.id);
+        state.defaultVisibleColumnIds.delete(column.id);
+        if (!state.defaultVisibleColumnIds.size && !state.defaultVisibleSpecialColumnIds.size) {
+          state.defaultVisibleColumnIds.add(column.id);
           input.checked = true;
           alert("At least one column must stay visible.");
           return;
@@ -993,11 +1729,6 @@ function renderSettingsPanel() {
       }
 
       persistTabs();
-      renderSearchTable();
-      const activeTab = getActiveTab();
-      if (activeTab) {
-        renderTabTable(activeTab);
-      }
       renderSettingsPanel();
     });
 
@@ -1068,11 +1799,6 @@ function renderSettingsPanel() {
       }
 
       persistTabs();
-      renderSearchTable();
-      const activeTab = getActiveTab();
-      if (activeTab) {
-        renderTabTable(activeTab);
-      }
       renderSettingsPanel();
     });
 
@@ -1179,19 +1905,20 @@ function summarizeTabRows(rows) {
   return { totals, counts };
 }
 
-function renderTabFooter(tab) {
+function renderTabFooter(tab, rows = tab.rows) {
+  const scope = tab.id;
   const footerRow = document.createElement("tr");
   footerRow.className = "tab-footer-row";
 
-  const leadingSpecialColumnCount = ["select", "remove", "move", "index"].filter((columnId) => isSpecialColumnVisible(columnId)).length;
+  const leadingSpecialColumnCount = ["select", "remove", "move", "index"].filter((columnId) => isSpecialColumnVisible(columnId, scope)).length;
 
   const selectCell = document.createElement("td");
   selectCell.colSpan = Math.max(leadingSpecialColumnCount, 1);
   selectCell.textContent = "Totals";
   footerRow.appendChild(selectCell);
 
-  const columns = getVisibleDataColumns();
-  const summary = summarizeTabRows(tab.rows);
+  const columns = getVisibleDataColumns(scope);
+  const summary = summarizeTabRows(rows);
 
   columns.forEach((column) => {
     const cell = document.createElement("td");
@@ -1242,13 +1969,19 @@ function submitClearDataModal(event) {
   state.searchRows = [];
   state.tabs = [];
   state.activeTabId = "search";
-  state.visibleColumnIds = new Set(DEFAULT_VISIBLE_COLUMN_IDS);
-  state.visibleSpecialColumnIds = new Set(DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS);
+  state.defaultVisibleColumnIds = new Set(DEFAULT_VISIBLE_COLUMN_IDS);
+  state.defaultVisibleSpecialColumnIds = new Set(DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS);
+  state.searchVisibleColumnIds = new Set(DEFAULT_VISIBLE_COLUMN_IDS);
+  state.searchVisibleSpecialColumnIds = new Set(DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS);
   state.exportColumnIds = new Set(DEFAULT_EXPORT_COLUMN_IDS);
   state.allowedSourceIds = new Set(DEFAULT_ALLOWED_SOURCE_IDS);
   state.keepSelectedOnSearch = DEFAULT_KEEP_SELECTED_ON_SEARCH;
   state.clearSearchInputsOnSearch = DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH;
   state.sortSettingsBySelected = DEFAULT_SORT_SETTINGS_BY_SELECTED;
+  state.columnOrderIds = [...DEFAULT_COLUMN_ORDER_IDS];
+  state.columnWidths = {};
+  state.themePreference = "system";
+  state.tabGridStates = {};
   state.selectedRows.search.clear();
   state.selectedRows.tabs = {};
 
@@ -1286,13 +2019,22 @@ function closeResetSettingsModal() {
 
 function applyDefaultSettings() {
 
-  state.visibleColumnIds = new Set(DEFAULT_VISIBLE_COLUMN_IDS);
-  state.visibleSpecialColumnIds = new Set(DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS);
+  state.defaultVisibleColumnIds = new Set(DEFAULT_VISIBLE_COLUMN_IDS);
+  state.defaultVisibleSpecialColumnIds = new Set(DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS);
+  state.searchVisibleColumnIds = new Set(DEFAULT_VISIBLE_COLUMN_IDS);
+  state.searchVisibleSpecialColumnIds = new Set(DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS);
+  state.tabs.forEach((tab) => {
+    tab.columnVisibility = createDefaultScopeColumnVisibility();
+  });
   state.exportColumnIds = new Set(DEFAULT_EXPORT_COLUMN_IDS);
   state.allowedSourceIds = new Set(DEFAULT_ALLOWED_SOURCE_IDS);
   state.keepSelectedOnSearch = DEFAULT_KEEP_SELECTED_ON_SEARCH;
   state.clearSearchInputsOnSearch = DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH;
   state.sortSettingsBySelected = DEFAULT_SORT_SETTINGS_BY_SELECTED;
+  state.columnOrderIds = [...DEFAULT_COLUMN_ORDER_IDS];
+  state.columnWidths = {};
+  state.themePreference = "system";
+  state.tabGridStates = Object.fromEntries(state.tabs.map((tab) => [tab.id, { ...DEFAULT_TAB_GRID_STATE }]));
 
   persistTabs();
   renderTabs();
@@ -1311,34 +2053,29 @@ function submitResetSettingsModal(event) {
   closeResetSettingsModal();
 }
 
-function rerenderSettingsAndTables() {
+function rerenderSettingsAfterDefaultColumnChange() {
   persistTabs();
-  renderSearchTable();
-  const activeTab = getActiveTab();
-  if (activeTab) {
-    renderTabTable(activeTab);
-  }
   renderSettingsPanel();
 }
 
 function selectAllFunctionalColumns() {
-  state.visibleSpecialColumnIds = new Set(SPECIAL_COLUMNS.map((column) => column.id));
-  rerenderSettingsAndTables();
+  state.defaultVisibleSpecialColumnIds = new Set(SPECIAL_COLUMNS.map((column) => column.id));
+  rerenderSettingsAfterDefaultColumnChange();
 }
 
 function resetFunctionalColumns() {
-  state.visibleSpecialColumnIds = new Set(DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS);
-  rerenderSettingsAndTables();
+  state.defaultVisibleSpecialColumnIds = new Set(DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS);
+  rerenderSettingsAfterDefaultColumnChange();
 }
 
 function selectAllDisplayColumns() {
-  state.visibleColumnIds = new Set(DATA_COLUMNS.map((column) => column.id));
-  rerenderSettingsAndTables();
+  state.defaultVisibleColumnIds = new Set(DATA_COLUMNS.map((column) => column.id));
+  rerenderSettingsAfterDefaultColumnChange();
 }
 
 function resetDisplayColumns() {
-  state.visibleColumnIds = new Set(DEFAULT_VISIBLE_COLUMN_IDS);
-  rerenderSettingsAndTables();
+  state.defaultVisibleColumnIds = new Set(DEFAULT_VISIBLE_COLUMN_IDS);
+  rerenderSettingsAfterDefaultColumnChange();
 }
 
 function selectAllExportColumns() {
@@ -1348,7 +2085,7 @@ function selectAllExportColumns() {
 }
 
 function copyExportColumnsFromDisplayColumns() {
-  state.exportColumnIds = new Set(state.visibleColumnIds);
+  state.exportColumnIds = new Set(state.defaultVisibleColumnIds);
   persistTabs();
   renderSettingsPanel();
 }
@@ -1361,12 +2098,14 @@ function resetExportColumns() {
 
 function selectAllSources() {
   state.allowedSourceIds = new Set(SOURCE_OPTIONS.map((source) => source.id));
-  rerenderSettingsAndTables();
+  persistTabs();
+  renderSettingsPanel();
 }
 
 function resetSources() {
   state.allowedSourceIds = new Set(DEFAULT_ALLOWED_SOURCE_IDS);
-  rerenderSettingsAndTables();
+  persistTabs();
+  renderSettingsPanel();
 }
 
 function selectAllBehaviorSettings() {
@@ -1415,6 +2154,7 @@ function openTabModal(mode = "create", tabId = null) {
   el.tabModal.classList.add("open");
   el.tabModal.setAttribute("aria-hidden", "false");
   tabModalState.isOpen = true;
+        state.searchGridState = { ...DEFAULT_SEARCH_GRID_STATE };
   window.requestAnimationFrame(() => {
     el.tabModalName.focus();
     el.tabModalName.select();
@@ -1423,6 +2163,7 @@ function openTabModal(mode = "create", tabId = null) {
 
 function closeTabModal() {
   if (pendingMoveState.isActive) {
+        state.searchGridState = { ...DEFAULT_SEARCH_GRID_STATE };
     resetPendingMoveState();
   }
 
@@ -1502,6 +2243,7 @@ function submitTabModal(event) {
     name,
     colorIndex,
     rows: [],
+    columnVisibility: createDefaultScopeColumnVisibility(),
   };
 
   state.tabs.push(tab);
@@ -1590,35 +2332,61 @@ function renderPanels() {
     return;
   }
 
-  const color = TAB_COLORS[activeTab.colorIndex] ?? TAB_COLORS[0];
   el.activeTabTitle.textContent = activeTab.name;
   el.activeTabMeta.textContent = `${activeTab.rows.length} cards`;
-  el.activeTabTitle.style.color = color.text;
-  el.activeTabMeta.style.color = color.text;
-  el.editActiveTabBtn.style.background = color.bg;
-  el.editActiveTabBtn.style.borderColor = color.border;
-  el.editActiveTabBtn.style.color = color.text;
-  el.deleteActiveTabBtn.style.background = "#b44343";
-  el.deleteActiveTabBtn.style.borderColor = "#8f3434";
-  el.deleteActiveTabBtn.style.color = "#fff";
 
   renderTabTable(activeTab);
 }
 
 function renderSearchTable() {
-  el.searchCountText.textContent = `${state.searchRows.length} cards`;
-  renderMarketTable(el.resultsBody, state.searchRows, "search", "add");
-  renderTableHead(el.resultsHead, [{ id: "add", label: "Add" }]);
+  const visibleRows = getFilteredGridRows("search", state.searchRows);
+  const gridState = getGridState("search");
+
+  el.searchFilterInput.value = gridState.filterText;
+  el.clearSearchFilterBtn.disabled = !gridState.filterText;
+  el.clearSearchSortBtn.disabled = !gridState.sortColumnId;
+  el.searchCountText.textContent = visibleRows.length === state.searchRows.length
+    ? `${state.searchRows.length} cards`
+    : `${visibleRows.length} of ${state.searchRows.length} cards`;
+
+  renderMarketTable(el.resultsBody, visibleRows, "search", "add");
+  renderTableHead(el.resultsHead, [
+    { id: "add", label: "Add" },
+    { id: "copy", label: "Copy" },
+  ], {
+    sortableColumns: true,
+    sortState: gridState,
+    scope: "search",
+    onSort: (columnId) => toggleGridSort("search", columnId),
+  });
+  renderScopeColumnChooser("search", el.searchFunctionalColumnList, el.searchDisplayColumnList);
   syncButtons();
 }
 
 function renderTabTable(tab) {
-  renderMarketTable(el.tabBody, tab.rows, tab.id, "removeMove");
+  const tabGridState = getGridState(tab.id);
+  const visibleRows = getFilteredGridRows(tab.id, tab.rows);
+
+  el.tabFilterInput.value = tabGridState.filterText;
+  el.clearTabFilterBtn.disabled = !tabGridState.filterText;
+  el.clearTabSortBtn.disabled = !tabGridState.sortColumnId;
+  el.activeTabMeta.textContent = visibleRows.length === tab.rows.length
+    ? `${tab.rows.length} cards`
+    : `${visibleRows.length} of ${tab.rows.length} cards`;
+
+  renderMarketTable(el.tabBody, visibleRows, tab.id, "removeMove");
   renderTableHead(el.tabHead, [
     { id: "remove", label: "Remove" },
     { id: "move", label: "Move" },
-  ]);
-  renderTabFooter(tab);
+    { id: "copy", label: "Copy" },
+  ], {
+    sortableColumns: true,
+    sortState: tabGridState,
+    scope: tab.id,
+    onSort: (columnId) => toggleGridSort(tab.id, columnId),
+  });
+  renderTabFooter(tab, visibleRows);
+  renderScopeColumnChooser(tab.id, el.tabFunctionalColumnList, el.tabDisplayColumnList);
   syncButtons();
 }
 
@@ -1632,7 +2400,7 @@ function renderMarketTable(tbody, rows, scope, actionMode = null) {
     const tr = document.createElement("tr");
     tr.classList.toggle("selected-row", selected.has(row.id));
 
-    if (isSpecialColumnVisible("select")) {
+    if (isSpecialColumnVisible("select", scope)) {
       const selectTd = document.createElement("td");
       selectTd.className = "select-cell";
       const checkbox = document.createElement("input");
@@ -1644,7 +2412,7 @@ function renderMarketTable(tbody, rows, scope, actionMode = null) {
     }
 
     if (actionMode === "add") {
-      if (isSpecialColumnVisible("add")) {
+      if (isSpecialColumnVisible("add", scope)) {
         const actionTd = document.createElement("td");
         actionTd.className = "action-cell add-cell";
         const actionBtn = document.createElement("button");
@@ -1655,8 +2423,22 @@ function renderMarketTable(tbody, rows, scope, actionMode = null) {
         actionTd.appendChild(actionBtn);
         tr.appendChild(actionTd);
       }
+
+      if (isSpecialColumnVisible("copy", scope)) {
+        const copyTd = document.createElement("td");
+        copyTd.className = "action-cell copy-cell";
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "row-action-btn copy";
+        copyBtn.textContent = "Copy";
+        copyBtn.addEventListener("click", () => {
+          copyRowToClipboard(row).catch((err) => alert(`Copy failed: ${err.message}`));
+        });
+        copyTd.appendChild(copyBtn);
+        tr.appendChild(copyTd);
+      }
     } else if (actionMode === "removeMove") {
-      if (isSpecialColumnVisible("remove")) {
+      if (isSpecialColumnVisible("remove", scope)) {
         const removeTd = document.createElement("td");
         removeTd.className = "action-cell remove-cell";
         const removeBtn = document.createElement("button");
@@ -1668,7 +2450,7 @@ function renderMarketTable(tbody, rows, scope, actionMode = null) {
         tr.appendChild(removeTd);
       }
 
-      if (isSpecialColumnVisible("move")) {
+      if (isSpecialColumnVisible("move", scope)) {
         const moveTd = document.createElement("td");
         moveTd.className = "action-cell move-cell";
         const moveBtn = document.createElement("button");
@@ -1679,17 +2461,36 @@ function renderMarketTable(tbody, rows, scope, actionMode = null) {
         moveTd.appendChild(moveBtn);
         tr.appendChild(moveTd);
       }
+
+      if (isSpecialColumnVisible("copy", scope)) {
+        const copyTd = document.createElement("td");
+        copyTd.className = "action-cell copy-cell";
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "row-action-btn copy";
+        copyBtn.textContent = "Copy";
+        copyBtn.addEventListener("click", () => {
+          copyRowToClipboard(row).catch((err) => alert(`Copy failed: ${err.message}`));
+        });
+        copyTd.appendChild(copyBtn);
+        tr.appendChild(copyTd);
+      }
     }
 
-    if (isSpecialColumnVisible("index")) {
+    if (isSpecialColumnVisible("index", scope)) {
       const indexTd = document.createElement("td");
       indexTd.className = "index-cell";
       indexTd.textContent = index + 1;
       tr.appendChild(indexTd);
     }
 
-    for (const column of getVisibleDataColumns()) {
+    for (const column of getVisibleDataColumns(scope)) {
       const td = document.createElement("td");
+      const width = getColumnWidth(column.id);
+      if (width) {
+        td.style.width = `${width}px`;
+        td.style.minWidth = `${width}px`;
+      }
       td.textContent = row[column.id] ?? "";
       tr.appendChild(td);
     }
@@ -2152,7 +2953,7 @@ function onExport(rows, fileName, sheetName) {
     return;
   }
 
-  const selectedExportColumns = DATA_COLUMNS.filter((column) => state.exportColumnIds.has(column.id));
+  const selectedExportColumns = getOrderedDataColumns().filter((column) => state.exportColumnIds.has(column.id));
   if (!selectedExportColumns.length) {
     alert("Select at least one export column in Settings > Export settings.");
     return;
@@ -2174,6 +2975,36 @@ function onExport(rows, fileName, sheetName) {
 
 function addNewTab() {
   openTabModal("create");
+}
+
+function duplicateActiveTab() {
+  const activeTab = getActiveTab();
+  if (!activeTab) {
+    return;
+  }
+
+  let duplicateName = `${activeTab.name} Copy`;
+  let suffix = 2;
+  while (state.tabs.some((tab) => tab.name.toLowerCase() === duplicateName.toLowerCase())) {
+    duplicateName = `${activeTab.name} Copy ${suffix}`;
+    suffix += 1;
+  }
+
+  const duplicateTab = {
+    id: createId(),
+    name: duplicateName.slice(0, 32),
+    colorIndex: activeTab.colorIndex,
+    rows: activeTab.rows.map((row) => ({ ...row })),
+    columnVisibility: {
+      visibleColumnIds: new Set(getColumnVisibilityForScope(activeTab.id).visibleColumnIds),
+      visibleSpecialColumnIds: new Set(getColumnVisibilityForScope(activeTab.id).visibleSpecialColumnIds),
+    },
+  };
+
+  state.tabs.push(duplicateTab);
+  state.tabGridStates[duplicateTab.id] = { ...DEFAULT_TAB_GRID_STATE };
+  setActiveTab(duplicateTab.id);
+  setStatus(`Duplicated ${activeTab.name} to ${duplicateTab.name}.`);
 }
 
 function openEditActiveTabModal() {
@@ -2224,6 +3055,7 @@ function submitDeleteModal(event) {
 
   state.tabs = state.tabs.filter((candidate) => candidate.id !== tabId);
   delete state.selectedRows.tabs[tabId];
+  delete state.tabGridStates[tabId];
   if (state.activeTabId === tabId) {
     state.activeTabId = "search";
   }
@@ -2267,7 +3099,7 @@ function exportSelectedTabRows() {
 }
 
 function selectAllRowsForScope(scope) {
-  const rows = scope === "search" ? state.searchRows : getActiveTab()?.rows ?? [];
+  const rows = getFilteredGridRows(scope);
   const selection = getSelectionSet(scope);
   selection.clear();
   rows.forEach((row) => selection.add(row.id));
@@ -2594,9 +3426,18 @@ function exportActiveTab() {
 
 renderTabs();
 
-if (state.activeTabId !== "search" && !state.tabs.some((tab) => tab.id === state.activeTabId)) {
-  state.activeTabId = "search";
+applyThemePreference();
+
+const themeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+if (typeof themeMediaQuery.addEventListener === "function") {
+  themeMediaQuery.addEventListener("change", () => {
+    if (state.themePreference === "system") {
+      applyThemePreference();
+    }
+  });
 }
+
+state.activeTabId = "search";
 
 renderPanels();
 syncButtons();

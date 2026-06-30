@@ -12,7 +12,9 @@ Static web app (HTML/CSS/JavaScript) that fetches Pokemon TCG market pricing fro
 - Row selection checkboxes on the left
 - Search tab plus dynamically created color-coded tabs
 - Move selected search rows into a chosen tab
-- Remove selected rows, clear a tab, refresh prices, and export all rows
+- Remove selected rows, clear a tab, refresh prices, duplicate a tab, copy rows to the clipboard, and export all rows
+- Active tab grid filtering and sortable column headers
+- Theme toggle with light, dark, and auto modes
 - Tab data persists in local browser storage across sessions
 - Excel export (`.xlsx`) available on search and tab grids using SheetJS (CDN)
 
@@ -44,7 +46,7 @@ http://localhost:8000
 5. Click **Fetch Market Data**.
 6. Select one or more search rows with the left checkboxes.
 7. Click **Move Selected** and choose the destination tab.
-8. Open a tab to remove selected rows, clear the tab, refresh prices, or export all rows.
+8. Open a tab to filter rows, sort by a column header, remove selected rows, clear the tab, duplicate the tab, copy a row, refresh prices, or export all rows.
 
 ### Importing a file
 
@@ -53,6 +55,14 @@ http://localhost:8000
 3. Include a card name column (for example: `card name` or `name`).
 4. Optional: include card number (for example: `card number`, `number`, or `local id`).
 5. Optional: enable **Include multiple matches when card number is missing** if you want all matching cards for name-only rows.
+
+### Grid controls
+
+- Drag a visible column header to reorder columns.
+- Drag the right edge of a column header to resize it.
+- Use the filter bar above an active tab to search within that tab.
+- Click a column header to toggle ascending, descending, or no sort.
+- Use the theme button in the top bar to switch between auto, light, and dark mode.
 
 ## Deployment
 
