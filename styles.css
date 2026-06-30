@@ -469,31 +469,32 @@ thead th {
   border-right: none;
 }
 
-#resultsTable thead th:first-child,
-#tabTable thead th:first-child {
+#resultsTable thead th.select-head,
+#tabTable thead th.select-head,
+#resultsTable thead th.action-head,
+#tabTable thead th.action-head,
+#resultsTable thead th.index-head,
+#tabTable thead th.index-head {
   text-transform: none;
 }
 
-#resultsTable thead th:first-child,
-#tabTable thead th:first-child,
-#resultsTable tbody td:first-child,
-#tabTable tbody td:first-child {
+.select-head,
+.select-cell {
   text-align: center;
   width: 72px;
 }
 
-#resultsTable thead th:nth-child(2),
-#resultsTable tbody td:nth-child(2) {
-  width: 54px;
-}
-
-#tabTable thead th:nth-child(2),
-#tabTable tbody td:nth-child(2) {
+.add-head,
+.add-cell,
+.remove-head,
+.remove-cell,
+.move-head,
+.move-cell {
   width: 96px;
 }
 
-#tabTable thead th:nth-child(3),
-#tabTable tbody td:nth-child(3) {
+.index-head,
+.index-cell {
   width: 54px;
 }
 
@@ -528,6 +529,10 @@ td {
 
 .row-action-btn.remove {
   background: #b44343;
+}
+
+.row-action-btn.move {
+  background: #2f5fa8;
 }
 
 tbody tr.selected-row {
@@ -680,6 +685,16 @@ tfoot td {
 }
 
 .modal-bottom-btn {
+  width: 100%;
+}
+
+.modal-tab-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.modal-tab-btn {
   width: 100%;
 }
 

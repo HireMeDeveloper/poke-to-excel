@@ -31,8 +31,17 @@ const DATA_COLUMNS = [
   { id: "updated", label: "updated" },
 ];
 
+const SPECIAL_COLUMNS = [
+  { id: "select", label: "select" },
+  { id: "add", label: "add" },
+  { id: "move", label: "move" },
+  { id: "remove", label: "remove" },
+  { id: "index", label: "#" },
+];
+
 const DEFAULT_HIDDEN_COLUMN_IDS = new Set(["updated", "source", "set_name"]);
 const DEFAULT_VISIBLE_COLUMN_IDS = DATA_COLUMNS.filter((column) => !DEFAULT_HIDDEN_COLUMN_IDS.has(column.id)).map((column) => column.id);
+const DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS = SPECIAL_COLUMNS.filter((column) => column.id !== "remove").map((column) => column.id);
 
 const SOURCE_OPTIONS = [
   { id: "cardmarket", label: "Cardmarket" },
@@ -40,6 +49,8 @@ const SOURCE_OPTIONS = [
 ];
 
 const DEFAULT_ALLOWED_SOURCE_IDS = SOURCE_OPTIONS.map((source) => source.id);
+const DEFAULT_KEEP_SELECTED_ON_SEARCH = true;
+const DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH = false;
 
 function createId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -120,7 +131,10 @@ function loadPersistedState() {
         tabs: [],
         activeTabId: "search",
         visibleColumnIds: DEFAULT_VISIBLE_COLUMN_IDS,
+        visibleSpecialColumnIds: DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS,
         allowedSourceIds: DEFAULT_ALLOWED_SOURCE_IDS,
+        keepSelectedOnSearch: DEFAULT_KEEP_SELECTED_ON_SEARCH,
+        clearSearchInputsOnSearch: DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH,
       };
     }
 
@@ -141,22 +155,40 @@ function loadPersistedState() {
       ? parsed.settings.visibleColumnIds.filter((columnId) => DATA_COLUMNS.some((column) => column.id === columnId))
       : DEFAULT_VISIBLE_COLUMN_IDS;
 
+    const visibleSpecialColumnIds = Array.isArray(parsed?.settings?.visibleSpecialColumnIds)
+      ? parsed.settings.visibleSpecialColumnIds.filter((columnId) => SPECIAL_COLUMNS.some((column) => column.id === columnId))
+      : DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS;
+
     const allowedSourceIds = Array.isArray(parsed?.settings?.allowedSourceIds)
       ? parsed.settings.allowedSourceIds.filter((sourceId) => SOURCE_OPTIONS.some((source) => source.id === sourceId))
       : DEFAULT_ALLOWED_SOURCE_IDS;
+
+    const keepSelectedOnSearch = typeof parsed?.settings?.keepSelectedOnSearch === "boolean"
+      ? parsed.settings.keepSelectedOnSearch
+      : DEFAULT_KEEP_SELECTED_ON_SEARCH;
+
+    const clearSearchInputsOnSearch = typeof parsed?.settings?.clearSearchInputsOnSearch === "boolean"
+      ? parsed.settings.clearSearchInputsOnSearch
+      : DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH;
 
     return {
       tabs,
       activeTabId: typeof parsed?.activeTabId === "string" ? parsed.activeTabId : "search",
       visibleColumnIds: visibleColumnIds.length ? visibleColumnIds : DEFAULT_VISIBLE_COLUMN_IDS,
+      visibleSpecialColumnIds: visibleSpecialColumnIds.length ? visibleSpecialColumnIds : DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS,
       allowedSourceIds: allowedSourceIds.length ? allowedSourceIds : DEFAULT_ALLOWED_SOURCE_IDS,
+      keepSelectedOnSearch,
+      clearSearchInputsOnSearch,
     };
   } catch {
     return {
       tabs: [],
       activeTabId: "search",
       visibleColumnIds: DEFAULT_VISIBLE_COLUMN_IDS,
+      visibleSpecialColumnIds: DEFAULT_VISIBLE_SPECIAL_COLUMN_IDS,
       allowedSourceIds: DEFAULT_ALLOWED_SOURCE_IDS,
+      keepSelectedOnSearch: DEFAULT_KEEP_SELECTED_ON_SEARCH,
+      clearSearchInputsOnSearch: DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH,
     };
   }
 }
@@ -168,7 +200,10 @@ const state = {
   tabs: persistedState.tabs,
   activeTabId: persistedState.activeTabId,
   visibleColumnIds: new Set(persistedState.visibleColumnIds),
+  visibleSpecialColumnIds: new Set(persistedState.visibleSpecialColumnIds),
   allowedSourceIds: new Set(persistedState.allowedSourceIds),
+  keepSelectedOnSearch: persistedState.keepSelectedOnSearch,
+  clearSearchInputsOnSearch: persistedState.clearSearchInputsOnSearch,
   selectedRows: {
     search: new Set(),
     tabs: {},
@@ -216,6 +251,16 @@ const el = {
   moveModalCount: document.getElementById("moveModalCount"),
   moveModalNewTabBtn: document.getElementById("moveModalNewTabBtn"),
   moveModalMoveBtn: document.getElementById("moveModalMoveBtn"),
+  addRowModal: document.getElementById("addRowModal"),
+  addRowModalCloseBtn: document.getElementById("addRowModalCloseBtn"),
+  addRowModalCancelBtn: document.getElementById("addRowModalCancelBtn"),
+  addRowModalNote: document.getElementById("addRowModalNote"),
+  addRowModalTabButtons: document.getElementById("addRowModalTabButtons"),
+  moveRowModal: document.getElementById("moveRowModal"),
+  moveRowModalCloseBtn: document.getElementById("moveRowModalCloseBtn"),
+  moveRowModalCancelBtn: document.getElementById("moveRowModalCancelBtn"),
+  moveRowModalNote: document.getElementById("moveRowModalNote"),
+  moveRowModalTabButtons: document.getElementById("moveRowModalTabButtons"),
   deleteModal: document.getElementById("deleteModal"),
   deleteModalCloseBtn: document.getElementById("deleteModalCloseBtn"),
   deleteModalCancelBtn: document.getElementById("deleteModalCancelBtn"),
@@ -247,6 +292,7 @@ const el = {
   tabFoot: document.getElementById("tabFoot"),
   settingsColumnList: document.getElementById("settingsColumnList"),
   settingsSourceList: document.getElementById("settingsSourceList"),
+  settingsBehaviorList: document.getElementById("settingsBehaviorList"),
   clearLocalDataBtn: document.getElementById("clearLocalDataBtn"),
 };
 
@@ -282,6 +328,20 @@ el.moveModalNewTabBtn.addEventListener("click", openNewTabFromMoveModal);
 el.moveModal.addEventListener("click", (event) => {
   if (event.target === el.moveModal) {
     closeMoveModal();
+  }
+});
+el.addRowModalCloseBtn.addEventListener("click", closeAddRowModal);
+el.addRowModalCancelBtn.addEventListener("click", closeAddRowModal);
+el.addRowModal.addEventListener("click", (event) => {
+  if (event.target === el.addRowModal) {
+    closeAddRowModal();
+  }
+});
+el.moveRowModalCloseBtn.addEventListener("click", closeMoveRowModal);
+el.moveRowModalCancelBtn.addEventListener("click", closeMoveRowModal);
+el.moveRowModal.addEventListener("click", (event) => {
+  if (event.target === el.moveRowModal) {
+    closeMoveRowModal();
   }
 });
 el.deleteModalCloseBtn.addEventListener("click", closeDeleteModal);
@@ -351,6 +411,17 @@ const clearDataModalState = {
   isOpen: false,
 };
 
+const addRowModalState = {
+  isOpen: false,
+  row: null,
+};
+
+const moveRowModalState = {
+  isOpen: false,
+  row: null,
+  sourceTabId: null,
+};
+
 function setStatus(message) {
   el.statusText.textContent = message;
 }
@@ -418,7 +489,10 @@ function persistTabs() {
         activeTabId: state.activeTabId,
         settings: {
           visibleColumnIds: Array.from(state.visibleColumnIds),
+          visibleSpecialColumnIds: Array.from(state.visibleSpecialColumnIds),
           allowedSourceIds: Array.from(state.allowedSourceIds),
+          keepSelectedOnSearch: state.keepSelectedOnSearch,
+          clearSearchInputsOnSearch: state.clearSearchInputsOnSearch,
         },
       })
     );
@@ -471,22 +545,54 @@ function getSettingsColumnsInDisplayOrder() {
   });
 }
 
-function renderTableHead(headElement, includeRemoveButton) {
+function getSettingsSpecialColumnsInDisplayOrder() {
+  return [...SPECIAL_COLUMNS].sort((left, right) => {
+    const leftVisible = state.visibleSpecialColumnIds.has(left.id);
+    const rightVisible = state.visibleSpecialColumnIds.has(right.id);
+
+    if (leftVisible !== rightVisible) {
+      return leftVisible ? -1 : 1;
+    }
+
+    return SPECIAL_COLUMNS.findIndex((column) => column.id === left.id) - SPECIAL_COLUMNS.findIndex((column) => column.id === right.id);
+  });
+}
+
+function isSpecialColumnVisible(columnId) {
+  return state.visibleSpecialColumnIds.has(columnId);
+}
+
+function getVisibleColumnSettingCount() {
+  return state.visibleColumnIds.size + state.visibleSpecialColumnIds.size;
+}
+
+function renderTableHead(headElement, actionLabels = []) {
   const row = document.createElement("tr");
 
-  const selectHead = document.createElement("th");
-  selectHead.textContent = "Select";
-  row.appendChild(selectHead);
-
-  if (includeRemoveButton) {
-    const removeHead = document.createElement("th");
-    removeHead.textContent = "Remove";
-    row.appendChild(removeHead);
+  if (isSpecialColumnVisible("select")) {
+    const selectHead = document.createElement("th");
+    selectHead.className = "select-head";
+    selectHead.textContent = "Select";
+    row.appendChild(selectHead);
   }
 
-  const indexHead = document.createElement("th");
-  indexHead.textContent = "#";
-  row.appendChild(indexHead);
+  actionLabels.forEach((actionLabel) => {
+    if (!isSpecialColumnVisible(actionLabel.id)) {
+      return;
+    }
+
+    const actionHead = document.createElement("th");
+    actionHead.className = `action-head ${actionLabel.id}-head`;
+    actionHead.textContent = actionLabel.label;
+    row.appendChild(actionHead);
+  });
+
+  if (isSpecialColumnVisible("index")) {
+    const indexHead = document.createElement("th");
+    indexHead.className = "index-head";
+    indexHead.textContent = "#";
+    row.appendChild(indexHead);
+  }
 
   getVisibleDataColumns().forEach((column) => {
     const th = document.createElement("th");
@@ -500,6 +606,43 @@ function renderTableHead(headElement, includeRemoveButton) {
 function renderSettingsPanel() {
   const fragment = document.createDocumentFragment();
 
+  getSettingsSpecialColumnsInDisplayOrder().forEach((column) => {
+    const label = document.createElement("label");
+    label.className = "setting-toggle";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = state.visibleSpecialColumnIds.has(column.id);
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        state.visibleSpecialColumnIds.add(column.id);
+      } else {
+        state.visibleSpecialColumnIds.delete(column.id);
+        if (!getVisibleColumnSettingCount()) {
+          state.visibleSpecialColumnIds.add(column.id);
+          input.checked = true;
+          alert("At least one column must stay visible.");
+          return;
+        }
+      }
+
+      persistTabs();
+      renderSearchTable();
+      const activeTab = getActiveTab();
+      if (activeTab) {
+        renderTabTable(activeTab);
+      }
+      renderSettingsPanel();
+    });
+
+    const text = document.createElement("span");
+    text.textContent = column.label;
+
+    label.appendChild(input);
+    label.appendChild(text);
+    fragment.appendChild(label);
+  });
+
   getSettingsColumnsInDisplayOrder().forEach((column) => {
     const label = document.createElement("label");
     label.className = "setting-toggle";
@@ -512,7 +655,7 @@ function renderSettingsPanel() {
         state.visibleColumnIds.add(column.id);
       } else {
         state.visibleColumnIds.delete(column.id);
-        if (!state.visibleColumnIds.size) {
+        if (!getVisibleColumnSettingCount()) {
           state.visibleColumnIds.add(column.id);
           input.checked = true;
           alert("At least one column must stay visible.");
@@ -579,6 +722,42 @@ function renderSettingsPanel() {
   });
 
   el.settingsSourceList.replaceChildren(sourceFragment);
+
+  const behaviorFragment = document.createDocumentFragment();
+
+  const keepSelectedLabel = document.createElement("label");
+  keepSelectedLabel.className = "setting-toggle";
+  const keepSelectedInput = document.createElement("input");
+  keepSelectedInput.type = "checkbox";
+  keepSelectedInput.checked = state.keepSelectedOnSearch;
+  keepSelectedInput.addEventListener("change", () => {
+    state.keepSelectedOnSearch = keepSelectedInput.checked;
+    persistTabs();
+    renderSettingsPanel();
+  });
+  const keepSelectedText = document.createElement("span");
+  keepSelectedText.textContent = "Keep selected on new search";
+  keepSelectedLabel.appendChild(keepSelectedInput);
+  keepSelectedLabel.appendChild(keepSelectedText);
+  behaviorFragment.appendChild(keepSelectedLabel);
+
+  const clearInputsLabel = document.createElement("label");
+  clearInputsLabel.className = "setting-toggle";
+  const clearInputsInput = document.createElement("input");
+  clearInputsInput.type = "checkbox";
+  clearInputsInput.checked = state.clearSearchInputsOnSearch;
+  clearInputsInput.addEventListener("change", () => {
+    state.clearSearchInputsOnSearch = clearInputsInput.checked;
+    persistTabs();
+    renderSettingsPanel();
+  });
+  const clearInputsText = document.createElement("span");
+  clearInputsText.textContent = "Clear search boxes on search";
+  clearInputsLabel.appendChild(clearInputsInput);
+  clearInputsLabel.appendChild(clearInputsText);
+  behaviorFragment.appendChild(clearInputsLabel);
+
+  el.settingsBehaviorList.replaceChildren(behaviorFragment);
 }
 
 function formatCurrencyTotal(value) {
@@ -625,8 +804,10 @@ function renderTabFooter(tab) {
   const footerRow = document.createElement("tr");
   footerRow.className = "tab-footer-row";
 
+  const leadingSpecialColumnCount = ["select", "remove", "move", "index"].filter((columnId) => isSpecialColumnVisible(columnId)).length;
+
   const selectCell = document.createElement("td");
-  selectCell.colSpan = 3;
+  selectCell.colSpan = Math.max(leadingSpecialColumnCount, 1);
   selectCell.textContent = "Totals";
   footerRow.appendChild(selectCell);
 
@@ -684,6 +865,8 @@ function submitClearDataModal(event) {
   state.activeTabId = "search";
   state.visibleColumnIds = new Set(DEFAULT_VISIBLE_COLUMN_IDS);
   state.allowedSourceIds = new Set(DEFAULT_ALLOWED_SOURCE_IDS);
+  state.keepSelectedOnSearch = DEFAULT_KEEP_SELECTED_ON_SEARCH;
+  state.clearSearchInputsOnSearch = DEFAULT_CLEAR_SEARCH_INPUTS_ON_SEARCH;
   state.selectedRows.search.clear();
   state.selectedRows.tabs = {};
 
@@ -911,19 +1094,22 @@ function renderPanels() {
 
 function renderSearchTable() {
   el.searchCountText.textContent = `${state.searchRows.length} cards`;
-  renderMarketTable(el.resultsBody, state.searchRows, "search", false);
-  renderTableHead(el.resultsHead, false);
+  renderMarketTable(el.resultsBody, state.searchRows, "search", "add");
+  renderTableHead(el.resultsHead, [{ id: "add", label: "Add" }]);
   syncButtons();
 }
 
 function renderTabTable(tab) {
-  renderMarketTable(el.tabBody, tab.rows, tab.id, true);
-  renderTableHead(el.tabHead, true);
+  renderMarketTable(el.tabBody, tab.rows, tab.id, "removeMove");
+  renderTableHead(el.tabHead, [
+    { id: "remove", label: "Remove" },
+    { id: "move", label: "Move" },
+  ]);
   renderTabFooter(tab);
   syncButtons();
 }
 
-function renderMarketTable(tbody, rows, scope, includeRemoveButton) {
+function renderMarketTable(tbody, rows, scope, actionMode = null) {
   tbody.innerHTML = "";
 
   const fragment = document.createDocumentFragment();
@@ -933,30 +1119,61 @@ function renderMarketTable(tbody, rows, scope, includeRemoveButton) {
     const tr = document.createElement("tr");
     tr.classList.toggle("selected-row", selected.has(row.id));
 
-    const selectTd = document.createElement("td");
-    selectTd.className = "select-cell";
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = selected.has(row.id);
-    checkbox.addEventListener("change", () => toggleRowSelection(scope, row.id, checkbox.checked));
-    selectTd.appendChild(checkbox);
-    tr.appendChild(selectTd);
-
-    if (includeRemoveButton) {
-      const actionTd = document.createElement("td");
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "row-action-btn remove";
-      removeBtn.textContent = "Remove";
-      removeBtn.addEventListener("click", () => removeRowFromActiveTab(row.id));
-      actionTd.appendChild(removeBtn);
-      tr.appendChild(actionTd);
+    if (isSpecialColumnVisible("select")) {
+      const selectTd = document.createElement("td");
+      selectTd.className = "select-cell";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = selected.has(row.id);
+      checkbox.addEventListener("change", () => toggleRowSelection(scope, row.id, checkbox.checked));
+      selectTd.appendChild(checkbox);
+      tr.appendChild(selectTd);
     }
 
-    const indexTd = document.createElement("td");
-    indexTd.className = "index-cell";
-    indexTd.textContent = index + 1;
-    tr.appendChild(indexTd);
+    if (actionMode === "add") {
+      if (isSpecialColumnVisible("add")) {
+        const actionTd = document.createElement("td");
+        actionTd.className = "action-cell add-cell";
+        const actionBtn = document.createElement("button");
+        actionBtn.type = "button";
+        actionBtn.className = "row-action-btn";
+        actionBtn.textContent = "Add";
+        actionBtn.addEventListener("click", () => openAddRowModal(row));
+        actionTd.appendChild(actionBtn);
+        tr.appendChild(actionTd);
+      }
+    } else if (actionMode === "removeMove") {
+      if (isSpecialColumnVisible("remove")) {
+        const removeTd = document.createElement("td");
+        removeTd.className = "action-cell remove-cell";
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "row-action-btn remove";
+        removeBtn.textContent = "Remove";
+        removeBtn.addEventListener("click", () => removeRowFromActiveTab(row.id));
+        removeTd.appendChild(removeBtn);
+        tr.appendChild(removeTd);
+      }
+
+      if (isSpecialColumnVisible("move")) {
+        const moveTd = document.createElement("td");
+        moveTd.className = "action-cell move-cell";
+        const moveBtn = document.createElement("button");
+        moveBtn.type = "button";
+        moveBtn.className = "row-action-btn move";
+        moveBtn.textContent = "Move";
+        moveBtn.addEventListener("click", () => openMoveRowModal(row, scope));
+        moveTd.appendChild(moveBtn);
+        tr.appendChild(moveTd);
+      }
+    }
+
+    if (isSpecialColumnVisible("index")) {
+      const indexTd = document.createElement("td");
+      indexTd.className = "index-cell";
+      indexTd.textContent = index + 1;
+      tr.appendChild(indexTd);
+    }
 
     for (const column of getVisibleDataColumns()) {
       const td = document.createElement("td");
@@ -1112,6 +1329,195 @@ function flattenMarketRows(cards, allowedSourceIds = null) {
   return rows;
 }
 
+function mergeSearchRowsKeepingSelectedFirst(nextRows) {
+  const selectedIds = state.selectedRows.search;
+  if (!selectedIds.size) {
+    return nextRows;
+  }
+
+  const pinnedRows = state.searchRows.filter((row) => selectedIds.has(row.id));
+  const pinnedIdSet = new Set(pinnedRows.map((row) => row.id));
+  const mergedRows = [...pinnedRows, ...nextRows.filter((row) => !pinnedIdSet.has(row.id))];
+
+  state.selectedRows.search = new Set(pinnedRows.map((row) => row.id));
+  return mergedRows;
+}
+
+function createModalTabButton(tab, onClick) {
+  const color = TAB_COLORS[tab.colorIndex] ?? TAB_COLORS[0];
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "modal-tab-btn";
+  button.textContent = tab.name;
+  button.style.background = color.bg;
+  button.style.border = `1px solid ${color.border}`;
+  button.style.color = color.text;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function openAddRowModal(row) {
+  if (!row) {
+    return;
+  }
+
+  addRowModalState.row = row;
+  addRowModalState.isOpen = true;
+
+  el.addRowModalTabButtons.innerHTML = "";
+  el.addRowModalNote.textContent = `Add ${row.name || "this card"} to a tab.`;
+
+  const fragment = document.createDocumentFragment();
+
+  if (!state.tabs.length) {
+    const empty = document.createElement("p");
+    empty.className = "modal-note";
+    empty.textContent = "No tabs available. Create a tab first.";
+    fragment.appendChild(empty);
+  } else {
+    state.tabs.forEach((tab) => {
+      const button = createModalTabButton(tab, () => addSearchRowToTab(tab.id));
+      fragment.appendChild(button);
+    });
+  }
+
+  el.addRowModalTabButtons.appendChild(fragment);
+  el.addRowModal.classList.add("open");
+  el.addRowModal.setAttribute("aria-hidden", "false");
+
+  window.requestAnimationFrame(() => {
+    const firstButton = el.addRowModalTabButtons.querySelector("button");
+    (firstButton ?? el.addRowModalCancelBtn).focus();
+  });
+}
+
+function closeAddRowModal() {
+  if (!addRowModalState.isOpen) {
+    return;
+  }
+
+  addRowModalState.isOpen = false;
+  addRowModalState.row = null;
+  el.addRowModal.classList.remove("open");
+  el.addRowModal.setAttribute("aria-hidden", "true");
+}
+
+function openMoveRowModal(row, sourceTabId) {
+  if (!row || !sourceTabId) {
+    return;
+  }
+
+  const sourceTab = getTabById(sourceTabId);
+  if (!sourceTab) {
+    return;
+  }
+
+  moveRowModalState.row = row;
+  moveRowModalState.sourceTabId = sourceTabId;
+  moveRowModalState.isOpen = true;
+
+  el.moveRowModalTabButtons.innerHTML = "";
+  el.moveRowModalNote.textContent = `Move ${row.name || "this card"} from ${sourceTab.name}.`;
+
+  const destinationTabs = state.tabs.filter((tab) => tab.id !== sourceTabId);
+  const fragment = document.createDocumentFragment();
+
+  if (!destinationTabs.length) {
+    const empty = document.createElement("p");
+    empty.className = "modal-note";
+    empty.textContent = "No destination tabs available. Create another tab first.";
+    fragment.appendChild(empty);
+  } else {
+    destinationTabs.forEach((tab) => {
+      const button = createModalTabButton(tab, () => moveTabRowToTab(tab.id));
+      fragment.appendChild(button);
+    });
+  }
+
+  el.moveRowModalTabButtons.appendChild(fragment);
+  el.moveRowModal.classList.add("open");
+  el.moveRowModal.setAttribute("aria-hidden", "false");
+
+  window.requestAnimationFrame(() => {
+    const firstButton = el.moveRowModalTabButtons.querySelector("button");
+    (firstButton ?? el.moveRowModalCancelBtn).focus();
+  });
+}
+
+function closeMoveRowModal() {
+  if (!moveRowModalState.isOpen) {
+    return;
+  }
+
+  moveRowModalState.isOpen = false;
+  moveRowModalState.row = null;
+  moveRowModalState.sourceTabId = null;
+  el.moveRowModal.classList.remove("open");
+  el.moveRowModal.setAttribute("aria-hidden", "true");
+}
+
+function moveTabRowToTab(targetTabId) {
+  const row = moveRowModalState.row;
+  const sourceTabId = moveRowModalState.sourceTabId;
+  if (!row || !sourceTabId) {
+    closeMoveRowModal();
+    return;
+  }
+
+  const sourceTab = getTabById(sourceTabId);
+  const targetTab = getTabById(targetTabId);
+  if (!sourceTab || !targetTab || sourceTab.id === targetTab.id) {
+    return;
+  }
+
+  const existsInTarget = targetTab.rows.some((existing) => existing.id === row.id);
+  if (!existsInTarget) {
+    targetTab.rows.push({ ...row });
+  }
+
+  sourceTab.rows = sourceTab.rows.filter((existing) => existing.id !== row.id);
+  const sourceSelection = getSelectionSet(sourceTab.id);
+  sourceSelection.delete(row.id);
+
+  persistTabs();
+  renderTabs();
+  renderPanels();
+
+  setStatus(
+    existsInTarget
+      ? `Removed 1 row from ${sourceTab.name}; ${targetTab.name} already had that card.`
+      : `Moved 1 row from ${sourceTab.name} to ${targetTab.name}.`
+  );
+
+  closeMoveRowModal();
+}
+
+function addSearchRowToTab(tabId) {
+  const row = addRowModalState.row;
+  if (!row) {
+    closeAddRowModal();
+    return;
+  }
+
+  const targetTab = getTabById(tabId);
+  if (!targetTab) {
+    return;
+  }
+
+  const exists = targetTab.rows.some((existing) => existing.id === row.id);
+  if (!exists) {
+    targetTab.rows.push({ ...row });
+    persistTabs();
+    renderTabs();
+    renderPanels();
+    setStatus(`Added 1 row to ${targetTab.name}.`);
+  } else {
+    setStatus(`${targetTab.name} already has that card.`);
+  }
+
+  closeAddRowModal();
+}
+
 async function fetchJson(url) {
   const res = await fetch(url);
   if (!res.ok) {
@@ -1197,8 +1603,21 @@ async function onFetch() {
       setCode: normalize(setCode),
     });
 
-    state.searchRows = flattenMarketRows(filteredCards, state.allowedSourceIds);
-    clearSelection("search");
+    const fetchedRows = flattenMarketRows(filteredCards, state.allowedSourceIds);
+    if (state.keepSelectedOnSearch) {
+      state.searchRows = mergeSearchRowsKeepingSelectedFirst(fetchedRows);
+    } else {
+      state.searchRows = fetchedRows;
+      clearSelection("search");
+    }
+
+    if (state.clearSearchInputsOnSearch) {
+      el.cardName.value = "";
+      el.setName.value = "";
+      el.cardNumber.value = "";
+      el.setCode.value = "";
+    }
+
     renderSearchTable();
 
     if (state.searchRows.length === 0) {

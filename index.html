@@ -44,13 +44,13 @@
           </label>
 
           <label>
-            <span>Set Name Contains</span>
-            <input id="setName" type="text" placeholder="base1" />
+            <span>Card Number Contains</span>
+            <input id="cardNumber" type="text" placeholder="221/105" />
           </label>
 
           <label>
-            <span>Card Number Contains</span>
-            <input id="cardNumber" type="text" placeholder="221/105" />
+            <span>Set Name Contains</span>
+            <input id="setName" type="text" placeholder="base1" />
           </label>
 
           <label>
@@ -147,6 +147,14 @@
             </div>
             <div id="settingsSourceList" class="settings-column-list"></div>
           </div>
+
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h3>Search behavior</h3>
+              <p class="settings-note">Control how selections and inputs behave when a new search runs.</p>
+            </div>
+            <div id="settingsBehaviorList" class="settings-column-list"></div>
+          </div>
         </div>
       </section>
 
@@ -227,6 +235,46 @@
 
             <button id="moveModalNewTabBtn" type="button" class="secondary-btn modal-bottom-btn">New Tab</button>
           </form>
+        </div>
+      </div>
+
+      <div id="addRowModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="addRowModalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="tab-eyebrow">Add card</p>
+              <h2 id="addRowModalTitle">Choose a tab</h2>
+            </div>
+            <button id="addRowModalCloseBtn" class="modal-close" type="button" aria-label="Close add popup">×</button>
+          </div>
+
+          <div class="modal-form">
+            <p id="addRowModalNote" class="modal-note"></p>
+            <div id="addRowModalTabButtons" class="modal-tab-buttons"></div>
+            <div class="modal-actions">
+              <button id="addRowModalCancelBtn" type="button" class="secondary-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="moveRowModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="moveRowModalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="tab-eyebrow">Move card</p>
+              <h2 id="moveRowModalTitle">Choose a destination tab</h2>
+            </div>
+            <button id="moveRowModalCloseBtn" class="modal-close" type="button" aria-label="Close move row popup">×</button>
+          </div>
+
+          <div class="modal-form">
+            <p id="moveRowModalNote" class="modal-note"></p>
+            <div id="moveRowModalTabButtons" class="modal-tab-buttons"></div>
+            <div class="modal-actions">
+              <button id="moveRowModalCancelBtn" type="button" class="secondary-btn">Cancel</button>
+            </div>
+          </div>
         </div>
       </div>
 
