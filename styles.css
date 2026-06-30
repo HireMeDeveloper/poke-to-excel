@@ -122,6 +122,12 @@ body {
   color: #fff;
 }
 
+.tab-btn.help-tab {
+  background: #dbe7f2;
+  border-color: transparent;
+  color: #143245;
+}
+
 .tab-add {
   width: 40px;
   padding: 0;
@@ -238,6 +244,49 @@ button:disabled {
   border-radius: 16px;
   background: linear-gradient(180deg, #fffdf8, #f8fbff);
   box-shadow: 0 12px 30px rgba(0, 34, 68, 0.06);
+}
+
+.help-panel {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f8fbff, #f0f5ff);
+  box-shadow: 0 12px 30px rgba(0, 34, 68, 0.06);
+}
+
+.help-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.help-header h2 {
+  margin: 2px 0 6px;
+  font-size: clamp(1.15rem, 2.1vw, 1.5rem);
+}
+
+.help-section {
+  margin-top: 16px;
+}
+
+.help-section h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.help-section p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.help-section strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .settings-header {

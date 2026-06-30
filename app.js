@@ -300,11 +300,13 @@ const el = {
   loadingWrap: document.getElementById("loadingWrap"),
   loadingText: document.getElementById("loadingText"),
   tabSearch: document.getElementById("tabSearch"),
+  tabHelp: document.getElementById("tabHelp"),
   tabSettings: document.getElementById("tabSettings"),
   dynamicTabs: document.getElementById("dynamicTabs"),
   statusRow: document.querySelector(".status-row"),
   searchPanel: document.getElementById("searchPanel"),
   tabPanel: document.getElementById("tabPanel"),
+  helpPanel: document.getElementById("helpPanel"),
   settingsPanel: document.getElementById("settingsPanel"),
   activeTabTitle: document.getElementById("activeTabTitle"),
   activeTabMeta: document.getElementById("activeTabMeta"),
@@ -390,6 +392,7 @@ el.deleteModal.addEventListener("click", (event) => {
   }
 });
 el.tabSearch.addEventListener("click", () => setActiveTab("search"));
+el.tabHelp.addEventListener("click", () => setActiveTab("help"));
 el.tabSettings.addEventListener("click", () => setActiveTab("settings"));
 el.functionalSelectAllBtn.addEventListener("click", selectAllFunctionalColumns);
 el.functionalResetBtn.addEventListener("click", resetFunctionalColumns);
@@ -565,7 +568,7 @@ function persistTabs() {
 }
 
 function setActiveTab(tabId) {
-  if (tabId !== "search" && tabId !== "settings" && !state.tabs.some((tab) => tab.id === tabId)) {
+  if (tabId !== "search" && tabId !== "help" && tabId !== "settings" && !state.tabs.some((tab) => tab.id === tabId)) {
     return;
   }
 
@@ -1273,6 +1276,7 @@ function submitTabModal(event) {
 
 function renderTabs() {
   el.tabSearch.classList.toggle("active", state.activeTabId === "search");
+  el.tabHelp.classList.toggle("active", state.activeTabId === "help");
   el.tabSettings.classList.toggle("active", state.activeTabId === "settings");
 
   el.dynamicTabs.innerHTML = "";
@@ -1300,9 +1304,11 @@ function renderTabs() {
 
 function renderPanels() {
   const searchActive = state.activeTabId === "search";
+  const helpActive = state.activeTabId === "help";
   const settingsActive = state.activeTabId === "settings";
   el.searchPanel.classList.toggle("active", searchActive);
-  el.tabPanel.classList.toggle("active", !searchActive && !settingsActive);
+  el.tabPanel.classList.toggle("active", !searchActive && !helpActive && !settingsActive);
+  el.helpPanel.classList.toggle("active", helpActive);
   el.settingsPanel.classList.toggle("active", settingsActive);
   el.statusRow.classList.toggle("hidden", !searchActive);
 
