@@ -695,6 +695,79 @@ table {
   width: 100%;
 }
 
+table.compact-grid {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+table.compact-grid td {
+  padding: clamp(5px, 0.8vw, 8px) clamp(6px, 0.9vw, 9px);
+  font-size: clamp(0.72rem, 1.45vw, 0.84rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+table.compact-grid th {
+  font-size: clamp(0.64rem, 1.2vw, 0.78rem);
+  padding: clamp(5px, 0.8vw, 8px) clamp(6px, 0.9vw, 9px);
+  white-space: normal;
+  line-height: 1.15;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+table.compact-grid th .column-label {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+table.compact-grid .index-head,
+table.compact-grid .index-cell {
+  width: clamp(38px, 7vw, 52px);
+}
+
+table.compact-grid .add-head,
+table.compact-grid .add-cell,
+table.compact-grid .move-head,
+table.compact-grid .move-cell,
+table.compact-grid .copy-head,
+table.compact-grid .copy-cell,
+table.compact-grid .remove-head,
+table.compact-grid .remove-cell {
+  width: clamp(52px, 10vw, 72px);
+}
+
+table.compact-grid .action-cell {
+  overflow: visible;
+  text-overflow: clip;
+  text-align: center;
+}
+
+table.compact-grid .row-action-btn {
+  margin: 0 auto;
+  min-width: 0;
+  width: 100%;
+  justify-content: center;
+  padding: 4px 6px;
+}
+
+table.compact-grid th[data-column-id="name"],
+table.compact-grid td[data-column-id="name"] {
+  width: auto;
+}
+
+table.compact-grid th[data-column-id="variant"],
+table.compact-grid td[data-column-id="variant"] {
+  width: clamp(68px, 15vw, 120px);
+}
+
+table.compact-grid th[data-column-id="market_price"],
+table.compact-grid td[data-column-id="market_price"] {
+  width: clamp(74px, 16vw, 128px);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 thead th {
   position: sticky;
   top: 0;
@@ -704,6 +777,13 @@ thead th {
   letter-spacing: 0.03em;
   text-transform: lowercase;
   z-index: 1;
+}
+
+#resultsTable thead,
+#tabTable thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 
 #resultsTable thead th,
@@ -748,6 +828,7 @@ thead th {
 .move-head,
 .move-cell {
   width: 96px;
+  text-align: center;
 }
 
 .index-head,
@@ -809,6 +890,11 @@ td {
   border-radius: 8px;
   padding: 4px 10px;
   font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .row-action-btn.remove {

@@ -67,6 +67,18 @@ const DEFAULT_MAX_CARDS = 100;
 const DEFAULT_ENABLE_ADVANCED_COLUMNS = true;
 const DEFAULT_SEARCH_GRID_STATE = { ...DEFAULT_TAB_GRID_STATE };
 const DEFAULT_RESTRICT_ADVANCED_COLUMNS = false;
+const VARIANT_SHORTHAND_MAP = {
+  standard: "STD",
+  normal: "NML",
+  holofoil: "Holo",
+  reverseholofoil: "RevH",
+  reversefoil: "RevF",
+  firstedition: "1E",
+  firsteditionholofoil: "1E Holo",
+  "1stedition": "1E",
+  "1steditionholofoil": "1E Holo",
+  unlimited: "UNL",
+};
 
 function normalizeColumnOrderIds(columnOrderIds) {
   const inputIds = Array.isArray(columnOrderIds)
@@ -182,6 +194,44 @@ function normalizeHeader(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function toVariantShorthand(variantName) {
+  const value = String(variantName ?? "").trim();
+  if (!value) {
+    return "";
+  }
+
+  const variantKey = value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (VARIANT_SHORTHAND_MAP[variantKey]) {
+    return VARIANT_SHORTHAND_MAP[variantKey];
+  }
+
+  const words = value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const tokenMap = {
+    standard: "STD",
+    normal: "NML",
+    holofoil: "Holo",
+    foil: "Foil",
+    reverse: "Rev",
+    first: "1E",
+    "1st": "1E",
+    edition: "",
+    unlimited: "UNL",
+  };
+
+  const shorthand = words
+    .map((token) => tokenMap[token.toLowerCase()] ?? token.slice(0, 4))
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return shorthand.length > 14 ? `${shorthand.slice(0, 13)}.` : shorthand;
 }
 
 function buildCardNumber(card) {
@@ -551,6 +601,8 @@ const el = {
   tabHead: document.getElementById("tabHead"),
   tabBody: document.getElementById("tabBody"),
   tabFoot: document.getElementById("tabFoot"),
+  resultsTable: document.getElementById("resultsTable"),
+  tabTable: document.getElementById("tabTable"),
   tabFunctionalColumnList: document.getElementById("tabFunctionalColumnList"),
   tabDisplayColumnList: document.getElementById("tabDisplayColumnList"),
   tabColumnsSelectAllBtn: document.getElementById("tabColumnsSelectAllBtn"),
@@ -840,6 +892,22 @@ function syncAdvancedViewControls() {
     }
 
     button.style.display = selectedActionDisplay;
+  });
+
+  [el.selectAllSearchBtn, el.unselectAllSearchBtn, el.selectAllTabBtn, el.unselectAllTabBtn].forEach((button) => {
+    if (!button) {
+      return;
+    }
+
+    button.style.display = selectedActionDisplay;
+  });
+
+  [el.resultsTable, el.tabTable].forEach((table) => {
+    if (!table) {
+      return;
+    }
+
+    table.classList.toggle("compact-grid", !advancedVisible);
   });
 }
 
@@ -1232,6 +1300,14 @@ function getVisibleDataColumns(scope) {
   return orderedColumns.filter((column) => visibility.visibleColumnIds.has(column.id));
 }
 
+function getDisplayColumnLabel(column, scope) {
+  if (!isAdvancedColumnsVisible() && column?.id === "market_price") {
+    return "price";
+  }
+
+  return column?.label ?? "";
+}
+
 function getColumnWidth(columnId) {
   const width = state.columnWidths[columnId];
   return Number.isFinite(width) ? width : null;
@@ -1583,6 +1659,7 @@ function renderTableHead(headElement, actionLabels = [], options = {}) {
   const onSort = typeof options.onSort === "function" ? options.onSort : null;
   const sortableColumns = Boolean(options.sortableColumns);
   const scope = options.scope ?? "search";
+  const applyPersistedWidths = isAdvancedColumnsVisible();
 
   if (isSpecialColumnVisible("select", scope)) {
     const selectHead = document.createElement("th");
@@ -1611,8 +1688,9 @@ function renderTableHead(headElement, actionLabels = [], options = {}) {
 
   getVisibleDataColumns(scope).forEach((column) => {
     const th = document.createElement("th");
+    const columnLabel = getDisplayColumnLabel(column, scope);
     const width = getColumnWidth(column.id);
-    if (width) {
+    if (applyPersistedWidths && width) {
       th.style.width = `${width}px`;
       th.style.minWidth = `${width}px`;
     }
@@ -1620,7 +1698,7 @@ function renderTableHead(headElement, actionLabels = [], options = {}) {
 
     const labelSpan = document.createElement("span");
     labelSpan.className = "column-label";
-    labelSpan.textContent = column.label;
+    labelSpan.textContent = columnLabel;
     th.appendChild(labelSpan);
 
     if (sortableColumns) {
@@ -1628,7 +1706,7 @@ function renderTableHead(headElement, actionLabels = [], options = {}) {
       th.setAttribute("draggable", "true");
       th.tabIndex = 0;
       th.setAttribute("role", "button");
-      th.setAttribute("aria-label", `Sort by ${column.label}`);
+      th.setAttribute("aria-label", `Sort by ${columnLabel}`);
       if (sortState.columnId === column.id) {
         th.classList.add("sorted-head");
       }
@@ -2539,6 +2617,7 @@ function renderMarketTable(tbody, rows, scope, actionMode = null) {
 
   const fragment = document.createDocumentFragment();
   const selected = getSelectionSet(scope);
+  const applyPersistedWidths = isAdvancedColumnsVisible();
 
   rows.forEach((row, index) => {
     const tr = document.createElement("tr");
@@ -2630,12 +2709,16 @@ function renderMarketTable(tbody, rows, scope, actionMode = null) {
 
     for (const column of getVisibleDataColumns(scope)) {
       const td = document.createElement("td");
+      td.dataset.columnId = column.id;
       const width = getColumnWidth(column.id);
-      if (width) {
+      if (applyPersistedWidths && width) {
         td.style.width = `${width}px`;
         td.style.minWidth = `${width}px`;
       }
-      td.textContent = row[column.id] ?? "";
+      const rawValue = row[column.id] ?? "";
+      td.textContent = column.id === "variant" && !isAdvancedColumnsVisible()
+        ? toVariantShorthand(rawValue)
+        : rawValue;
       tr.appendChild(td);
     }
 
